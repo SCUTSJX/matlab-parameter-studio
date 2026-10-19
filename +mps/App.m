@@ -25,7 +25,7 @@ classdef App < handle
         XDrop, YList, PlotStatus, UIAxes
         LogArea
         OpenButton, RescanButton, RunButton, SaveButton, ReportButton
-        FolderButton, ExportButton, CloseFiguresButton
+        FolderButton, ExportButton, CloseFiguresButton, HelpButton
         SelectAllButton, ResetButton, PlotButton, SavePlotButton, ExportCsvButton
         OpenReportInline
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
@@ -74,6 +74,22 @@ classdef App < handle
                     '打开失败', 'Icon', 'error');
                 return;
             end
+
+            % If the user already edited values and switches to another
+            % file, ask before throwing those edits away.
+            if ~isempty(app.SourceFile) && ...
+                    ~strcmp(app.SourceFile, filePath) && ...
+                    ~isempty(app.Params) && any([app.Params.isChanged]) && ...
+                    strcmp(app.UIFigure.Visible, 'on')
+                choice = uiconfirm(app.UIFigure, ...
+                    '当前有还没运行的新值，打开别的文件会丢失。是否继续？', ...
+                    '未保存的修改', 'Options', {'继续', '取消'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2);
+                if ~strcmp(choice, '继续')
+                    return;
+                end
+            end
+
             try
                 p = mps.scan(filePath);
             catch err
@@ -202,7 +218,8 @@ classdef App < handle
                     '已载入函数文件：识别 %d 个数字（%d 个推荐），可保存调参后的函数，但不能直接运行%s。', ...
                     numel(p), nUse, annNote);
             else
-                app.StatusLabel.Text = sprintf('已载入：识别 %d 个数字，其中 %d 个推荐参数%s。', ...
+                app.StatusLabel.Text = sprintf( ...
+                    '已载入：识别 %d 个数字，其中 %d 个推荐参数%s。下一步：改“新值”后点“运行”。', ...
                     numel(p), nUse, annNote);
             end
             drawnow;
@@ -364,15 +381,16 @@ classdef App < handle
             catch
             end
             app.UIFigure.CloseRequestFcn = @(s, e) app.onClose();
+            app.UIFigure.KeyPressFcn = @(s, e) app.onKeyPress(e);
 
             root = uigridlayout(app.UIFigure, [3 1]);
             root.RowHeight = {48, '1x', 26};
             root.Padding = [10 10 10 8];
             root.RowSpacing = 8;
 
-            tb = uigridlayout(root, [1 10]);
+            tb = uigridlayout(root, [1 11]);
             tb.Layout.Row = 1;
-            tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 100, 100, 100, 100};
+            tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 110, 110, 100, 90, 90};
             tb.Padding = [0 0 0 0];
             tb.ColumnSpacing = 6;
 
@@ -403,21 +421,25 @@ classdef App < handle
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onOpenReport());
             app.ReportButton.Layout.Column = 6;
 
-            app.FolderButton = uibutton(tb, 'Text', '打开输出', ...
+            app.FolderButton = uibutton(tb, 'Text', '打开结果文件夹', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onOpenFolder());
             app.FolderButton.Layout.Column = 7;
 
-            app.ExportButton = uibutton(tb, 'Text', '导出参数', ...
+            app.ExportButton = uibutton(tb, 'Text', '导出参数 JSON', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onExportParams());
             app.ExportButton.Layout.Column = 8;
 
-            app.CloseFiguresButton = uibutton(tb, 'Text', '关闭结果图', ...
+            app.CloseFiguresButton = uibutton(tb, 'Text', '关闭结果图窗', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCloseFigures());
             app.CloseFiguresButton.Layout.Column = 9;
 
             app.CompareButton = uibutton(tb, 'Text', '对比上次运行', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCompareRuns());
             app.CompareButton.Layout.Column = 10;
+
+            app.HelpButton = uibutton(tb, 'Text', '快速上手', ...
+                'ButtonPushedFcn', @(s, e) app.onHelp());
+            app.HelpButton.Layout.Column = 11;
 
             main = uigridlayout(root, [1 2]);
             main.Layout.Row = 2;
@@ -631,12 +653,97 @@ classdef App < handle
                 'FontName', 'Consolas', 'FontSize', 11, 'Value', {''});
 
             app.StatusLabel = uilabel(root, ...
-                'Text', '就绪。打开一个 .m 文件开始。', ...
+                'Text', '就绪。第 1 步：点左上角“打开 .m 文件”。', ...
                 'FontColor', [0.35 0.35 0.35]);
             app.StatusLabel.Layout.Row = 3;
+
+            app.setTooltips();
         end
 
         % -----------------------------------------------------------------
+        function setTooltips(app)
+            %SETTOOLTIPS One-sentence Chinese hints for every control.
+            set(app.OpenButton, 'Tooltip', '打开一个 .m 脚本开始调参');
+            set(app.RescanButton, 'Tooltip', ...
+                '重新扫描当前文件；会丢弃还没运行的新值');
+            set(app.RunButton, 'Tooltip', ...
+                '用勾选/改好的参数运行脚本（快捷键 F5 或 Ctrl+Enter）');
+            set(app.SaveButton, 'Tooltip', ...
+                '另存为 <原名>_tuned.m，可以脱离本工具直接在 MATLAB 里运行');
+            set(app.ReportButton, 'Tooltip', ...
+                '用浏览器打开本次运行的 HTML 报告（参数+图+变量+日志）');
+            set(app.FolderButton, 'Tooltip', ...
+                '打开结果文件夹，里面有图、workspace.mat 和报告');
+            set(app.ExportButton, 'Tooltip', ...
+                '把当前识别出的所有参数导出成 JSON 文件');
+            set(app.CloseFiguresButton, 'Tooltip', ...
+                '关掉本次运行留在屏幕上的图窗');
+            set(app.CompareButton, 'Tooltip', ...
+                '把“上一次运行”和“这一次运行”做成对比报告');
+            set(app.HelpButton, 'Tooltip', '30 秒看懂：从打开文件到保存结果');
+
+            set(app.FilterDrop, 'Tooltip', ...
+                '选择显示哪些参数：推荐参数 / 全部数字 / 已修改');
+            set(app.SearchField, 'Tooltip', '按参数名、注释或行号搜索');
+            set(app.SelectAllButton, 'Tooltip', ...
+                '一键勾选或取消所有推荐参数');
+            set(app.ResetButton, 'Tooltip', ...
+                '把所有“新值”恢复成脚本里的当前值');
+            set(app.AnnotateTemplateButton, 'Tooltip', ...
+                '生成注释模板 JSON，交给 AI 填写参数含义和单位');
+            set(app.ImportAnnotationButton, 'Tooltip', ...
+                '导入 AI 填好的注释 JSON，“注释”列会显示中文含义');
+            set(app.ClearAnnotationButton, 'Tooltip', ...
+                '清除当前表格里的注释（注释文件不会被删除）');
+            set(app.LockButton, 'Tooltip', ...
+                '把选中行的参数钉死在原值，运行和保存都不会改它');
+            set(app.KeepFiguresCheck, 'Tooltip', ...
+                '勾选：运行结束后保留图窗；不勾选：图窗自动关闭（推荐）');
+            set(app.PresetDrop, 'Tooltip', '已保存的参数方案');
+            set(app.PresetNameField, 'Tooltip', ...
+                '给当前方案起个名字，例如 基线 / 高刚度 / 低阻尼');
+            set(app.PresetSaveButton, 'Tooltip', ...
+                '把当前的勾选、新值、锁定状态存成一个命名方案');
+            set(app.PresetLoadButton, 'Tooltip', ...
+                '把选中方案的新值、勾选、锁定恢复到表格');
+            set(app.PresetDeleteButton, 'Tooltip', '删除选中的参数方案');
+            set(app.SweepButton, 'Tooltip', ...
+                '多个参数一次跑多组值，自动出叠加曲线和扫描报告');
+
+            set(app.FigureDrop, 'Tooltip', '选择要预览的输出图');
+            set(app.OpenReportInline, 'Tooltip', '用浏览器打开 HTML 报告');
+            set(app.XDrop, 'Tooltip', '绘图时的 X 轴变量');
+            set(app.YList, 'Tooltip', '绘图时的 Y 轴变量，可以多选');
+            set(app.PlotButton, 'Tooltip', '按选择的 X/Y 变量画图');
+            set(app.SavePlotButton, 'Tooltip', ...
+                '保存这张图，并把报告更新为包含它');
+            set(app.ExportCsvButton, 'Tooltip', ...
+                '把当前 X/Y 曲线导出成 curve_data.csv（Excel 可直接打开）');
+        end
+
+        % -----------------------------------------------------------------
+        function onKeyPress(app, event)
+            %ONKEYPRESS F5 / Ctrl+Enter = run, Ctrl+O = open.
+            if ~isstruct(event) || ~isfield(event, 'Key')
+                return;
+            end
+            key = lower(event.Key);
+            mods = {};
+            if isfield(event, 'Modifier')
+                if iscell(event.Modifier)
+                    mods = event.Modifier;
+                elseif ischar(event.Modifier)
+                    mods = {event.Modifier};
+                end
+            end
+            hasCtrl = any(strcmpi(mods, 'control'));
+            if strcmp(key, 'f5') || (strcmp(key, 'return') && hasCtrl)
+                app.onRun();
+            elseif strcmp(key, 'o') && hasCtrl
+                app.onOpen();
+            end
+        end
+
         function onOpen(app)
             if isempty(app.SourceFile)
                 startDir = pwd;
@@ -649,6 +756,43 @@ classdef App < handle
                 return;
             end
             app.loadFile(fullfile(path, file));
+        end
+
+        function onHelp(app)
+            %ONHELP Show a short, plain-language quick start.
+            fig = uifigure('Name', '快速上手', 'Position', [320 180 640 480]);
+            g = uigridlayout(fig, [2 1]);
+            g.RowHeight = {'1x', 34};
+            g.Padding = [14 14 14 14];
+            g.RowSpacing = 10;
+            txt = { ...
+                '30 秒上手', ...
+                '', ...
+                '1. 点“打开 .m 文件”，选一个 MATLAB 脚本。', ...
+                '2. 左侧表格列出能改的参数：在“新值”列输入新的数字。', ...
+                '    “使用”打勾 = 本次运行用这个新值；', ...
+                '    “锁定”打勾 = 这个参数不许改，永远保持原值。', ...
+                '3. 点“运行”（快捷键 F5）。', ...
+                '4. 看结果：', ...
+                '    · “结果图”看脚本产生的图；', ...
+                '    · “工作区”看变量；“绘图”里可自己选 X/Y 出图、导出 CSV；', ...
+                '    · “打开报告”看 HTML 报告（参数变化 + 图 + 变量 + 日志）。', ...
+                '5. 满意后点“保存调参 .m”，得到可以直接运行的脚本。', ...
+                '', ...
+                '常用进阶（不清楚可以先不用）：', ...
+                '· 看不懂参数含义：生成注释 JSON → 给 AI 填写 → 导入注释。', ...
+                '· 想存几套方案：在“参数集”输入名字 → 保存为参数集。', ...
+                '· 想对比两次：改参数再运行一次 → 点“对比上次运行”。', ...
+                '· 想批量试值：点“批量扫描...”，填 1,2,4 或 1:0.5:5。', ...
+                '', ...
+                '提示：运行脚本时图窗默认不弹出，不会打扰你；', ...
+                '想看就勾“保留结果图窗”。'};
+            ta = uitextarea(g, 'Editable', 'off', 'FontSize', 12, 'Value', txt);
+            ta.Layout.Row = 1;
+            b = uibutton(g, 'Text', '知道了', ...
+                'ButtonPushedFcn', @(s, e) delete(fig));
+            b.Layout.Row = 2;
+            uiwait(fig);
         end
 
         function onRescan(app)
@@ -798,7 +942,7 @@ classdef App < handle
 
                 if r.ok
                     app.StatusLabel.Text = sprintf( ...
-                        '完成：%d 个参数参与，%d 张图，%d 个变量，耗时 %.2f s。', ...
+                        '完成：%d 个参数参与，%d 张图，%d 个变量，耗时 %.2f s。可点“打开报告”查看结果。', ...
                         sum([params.use]), numel(r.figures), ...
                         numel(r.workspace), r.elapsedSeconds);
                 else

@@ -141,6 +141,17 @@ function result = runScript(sourceFile, scriptPath, outDir)
         catch
         end
     end
+
+    % Make error messages point at the user's own file instead of the
+    % generated temp script (mps_run_*.m), otherwise the line references
+    % are confusing.
+    if ~isempty(result.error)
+        result.error = mapScriptPath(result.error, scriptPath, sourceFile);
+    end
+    if ~isempty(result.log)
+        result.log = mapScriptPath(result.log, scriptPath, sourceFile);
+    end
+
     result.elapsedSeconds = toc(t0);
 
     clear cleanupObj;
@@ -152,4 +163,18 @@ function result = runScript(sourceFile, scriptPath, outDir)
         catch
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function txt = mapScriptPath(txt, scriptPath, sourceFile)
+%MAPSCRIPTPATH Replace the generated script name with the original file.
+    if isempty(txt) || isempty(scriptPath) || isempty(sourceFile)
+        return;
+    end
+    [~, tmpBase, tmpExt] = fileparts(scriptPath);
+    [~, srcBase, srcExt] = fileparts(sourceFile);
+    txt = strrep(txt, scriptPath, sourceFile);
+    txt = strrep(txt, [tmpBase tmpExt], [srcBase srcExt]);
+    % MATLAB stack traces often print the function name without extension.
+    txt = strrep(txt, tmpBase, srcBase);
 end
