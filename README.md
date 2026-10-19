@@ -45,6 +45,7 @@
 ## 界面说明
 
 - **参数表**：`使用`（勾选参与运行的参数）、`锁定`（钉死原值，不允许修改）、`参数`（推导出的名字）、`当前值`、`新值`（可编辑）、`行`、`类型`、`说明`、`注释`（AI 注释列）。
+- **参数集**：下拉选择已保存的参数方案，名称框输入新方案名，点“保存为参数集 / 载入 / 删除”管理。
 - **筛选**：
   - `推荐参数`：只显示推荐分数较高的参数（默认）。
   - `全部数字`：显示脚本中所有数字字面量，包括绘图样式、数组尺寸、索引等低置信度数字，由你决定是否勾选。
@@ -128,6 +129,14 @@ AI 返回的格式很宽松，以下几种都支持：
 - 适合锁定采样率、系统尺寸、单位换算、协议常量这类“结构参数”。锁定状态会写进 `parameters.json` 和 HTML 报告。
 - 命令行动态锁定的公开方法：`app.toggleLock('参数名')`。
 
+### 参数集预设（命名方案）
+
+- 调好一组满意的方案后（勾选、新值、锁定状态都会保存），在“参数集”一行的名称框输入名字（如“基线”“高刚度”“低阻尼”），点“保存为参数集”。
+- 方案保存在脚本旁边的 `<文件名>_presets.json`，会跟着项目目录走；下次打开同一个 `.m` 时自动出现在下拉框里，选择后点“载入”即可一键恢复。
+- 同名保存会询问是否覆盖；“删除”移除选中的方案。
+- 命令行动态用法：`app.saveCurrentPreset('基线')`、`app.applyPresetByName('基线')`、`app.listPresets()`；纯函数用法：`mps.savePreset(file, name, params)`、`mps.readPresets(file)`、`mps.applyPreset(params, preset)`。
+- 匹配规则和注释一致：优先 `id`，其次 `name + line`，最后唯一 `name`；脚本改过变量名或行号时报告未匹配数量，不会乱套。
+
 ### 对比两次运行结果
 
 典型流程：先用一组参数运行一次 → 改参数再运行一次 → 点工具栏“对比上次运行”。
@@ -207,6 +216,11 @@ MatlabParameterStudio.m      启动入口（函数）
 +mps/writeAnnotationTemplate.m  生成 AI 注释模板 JSON
 +mps/readAnnotations.m       读取注释 JSON（支持 3 种格式）
 +mps/applyAnnotations.m      按 id / name+line / name 匹配注释
++mps/presetsPath.m           参数集文件路径
++mps/readPresets.m           读取 <文件>_presets.json
++mps/writePresets.m          写回参数集文件
++mps/savePreset.m            保存/覆盖一个命名参数集
++mps/applyPreset.m           载入参数集（新值/勾选/锁定）
 demo/demo_simulation.m       弹簧-阻尼示例
 demo/relative_demo.m         相对路径加载示例
 tests/run_tests.m            自测
@@ -221,7 +235,7 @@ addpath('tests')
 run_tests
 ```
 
-测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、AI 注释模板与导入、函数文件扫描。
+测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、AI 注释模板与导入、锁定参数、运行对比、参数集预设、函数文件扫描。
 
 ## 已知限制
 

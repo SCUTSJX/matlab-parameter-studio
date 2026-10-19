@@ -30,6 +30,8 @@ classdef App < handle
         OpenReportInline
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
+        PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
+        PresetDeleteButton
         SourceLines = {}
         VisibleIdx = []
         SelectedRow = 0
@@ -37,6 +39,8 @@ classdef App < handle
         CustomPlotPath = ''
         LastAnnotations = struct([])
         AnnotationFile = ''
+        Presets = struct([])
+        PresetsFile = ''
         Busy = false
     end
 
@@ -133,6 +137,7 @@ classdef App < handle
                 app.AnnotationFile = annFile;
                 annMatched = annStats.matched;
             end
+            app.loadPresetsFromDisk();
             app.LastRun = struct();
             app.LastWorkspace = struct();
             app.LastReport = '';
@@ -285,6 +290,33 @@ classdef App < handle
             end
             app.refreshTable();
         end
+
+        function saveCurrentPreset(app, name)
+            %SAVECURRENTPRESET Store the current use/newValue/locked state.
+            if isempty(app.SourceFile)
+                error('mps:App:noFile', '请先打开一个 .m 文件。');
+            end
+            app.Presets = mps.savePreset(app.SourceFile, name, app.Params);
+            app.refreshPresets();
+        end
+
+        function names = listPresets(app)
+            %LISTPRESETS Names of the presets saved for the current file.
+            names = {};
+            if ~isempty(app.Presets)
+                names = {app.Presets.name};
+            end
+        end
+
+        function stats = applyPresetByName(app, name)
+            %APPLYPRESETBYNAME Load a preset into the current parameter list.
+            idx = find(strcmp({app.Presets.name}, name), 1);
+            if isempty(idx)
+                error('mps:App:presetNotFound', '找不到参数集：%s', name);
+            end
+            [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
+            app.refreshTable();
+        end
     end
 
     methods (Access = private)
@@ -360,8 +392,8 @@ classdef App < handle
 
             lp = uipanel(main, 'Title', '参数', 'FontWeight', 'bold');
             lp.Layout.Column = 1;
-            lg = uigridlayout(lp, [4 1]);
-            lg.RowHeight = {34, 30, '1x', 96};
+            lg = uigridlayout(lp, [5 1]);
+            lg.RowHeight = {34, 30, 30, '1x', 96};
             lg.Padding = [8 8 8 8];
             lg.RowSpacing = 6;
 
@@ -429,6 +461,35 @@ classdef App < handle
                 'Text', '保留结果图窗', 'Value', false);
             app.KeepFiguresCheck.Layout.Column = 6;
 
+            pg2 = uigridlayout(lg, [1 5]);
+            pg2.Layout.Row = 3;
+            pg2.ColumnWidth = {150, '1x', 96, 72, 72};
+            pg2.Padding = [0 0 0 0];
+            pg2.ColumnSpacing = 6;
+
+            app.PresetDrop = uidropdown(pg2, 'Items', {'(无参数集)'}, ...
+                'Value', '(无参数集)');
+            app.PresetDrop.Layout.Column = 1;
+
+            app.PresetNameField = uieditfield(pg2, 'text', ...
+                'Placeholder', '新参数集名称，如 基线 / 高刚度');
+            app.PresetNameField.Layout.Column = 2;
+
+            app.PresetSaveButton = uibutton(pg2, 'Text', '保存为参数集', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onSavePreset());
+            app.PresetSaveButton.Layout.Column = 3;
+
+            app.PresetLoadButton = uibutton(pg2, 'Text', '载入', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onLoadPreset());
+            app.PresetLoadButton.Layout.Column = 4;
+
+            app.PresetDeleteButton = uibutton(pg2, 'Text', '删除', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onDeletePreset());
+            app.PresetDeleteButton.Layout.Column = 5;
+
             app.Table = uitable(lg, ...
                 'ColumnName', {'使用', '锁定', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
                 'ColumnEditable', [true true false false true false false false false], ...
@@ -437,11 +498,11 @@ classdef App < handle
                 'RowName', [], ...
                 'CellEditCallback', @(s, e) app.onCellEdit(s, e), ...
                 'CellSelectionCallback', @(s, e) app.onCellSelect(s, e));
-            app.Table.Layout.Row = 3;
+            app.Table.Layout.Row = 4;
 
             app.SourcePreview = uitextarea(lg, 'Editable', 'off', ...
                 'FontName', 'Consolas', 'FontSize', 11, 'Value', {''});
-            app.SourcePreview.Layout.Row = 4;
+            app.SourcePreview.Layout.Row = 5;
 
             tg = uitabgroup(main);
             tg.Layout.Column = 2;
@@ -1091,6 +1152,142 @@ classdef App < handle
             app.updateLockButton();
         end
 
+        % ---- Parameter presets -------------------------------------
+        function loadPresetsFromDisk(app)
+            app.Presets = struct([]);
+            app.PresetsFile = '';
+            if ~isempty(app.SourceFile)
+                app.PresetsFile = mps.presetsPath(app.SourceFile);
+                try
+                    app.Presets = mps.readPresets(app.SourceFile);
+                catch
+                    app.Presets = struct([]);
+                end
+            end
+            app.refreshPresets();
+        end
+
+        function refreshPresets(app)
+            names = {};
+            if ~isempty(app.Presets)
+                names = {app.Presets.name};
+            end
+            if isempty(names)
+                app.PresetDrop.Items = {'(无参数集)'};
+                app.PresetDrop.Value = '(无参数集)';
+                app.PresetLoadButton.Enable = 'off';
+                app.PresetDeleteButton.Enable = 'off';
+                return;
+            end
+            app.PresetDrop.Items = names;
+            if ~any(strcmp(names, app.PresetDrop.Value))
+                app.PresetDrop.Value = names{1};
+            end
+            if isempty(app.SourceFile)
+                app.PresetLoadButton.Enable = 'off';
+                app.PresetDeleteButton.Enable = 'off';
+            else
+                app.PresetLoadButton.Enable = 'on';
+                app.PresetDeleteButton.Enable = 'on';
+            end
+        end
+
+        function onSavePreset(app)
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            name = strtrim(char(app.PresetNameField.Value));
+            if isempty(name) && ~isempty(app.Presets)
+                if ~strcmp(app.PresetDrop.Value, '(无参数集)')
+                    name = app.PresetDrop.Value;
+                end
+            end
+            if isempty(name)
+                uialert(app.UIFigure, ...
+                    '请输入参数集名称，或在下拉框里选择一个已有参数集覆盖保存。', ...
+                    '缺少名称', 'Icon', 'warning');
+                return;
+            end
+            exists = any(strcmp({app.Presets.name}, name));
+            if exists
+                choice = uiconfirm(app.UIFigure, ...
+                    sprintf('参数集“%s”已存在，是否覆盖？', name), ...
+                    '覆盖参数集', 'Options', {'覆盖', '取消'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2);
+                if ~strcmp(choice, '覆盖')
+                    return;
+                end
+            end
+            try
+                app.Presets = mps.savePreset(app.SourceFile, name, app.Params);
+            catch err
+                uialert(app.UIFigure, err.message, '保存失败', 'Icon', 'error');
+                return;
+            end
+            app.PresetNameField.Value = '';
+            app.refreshPresets();
+            app.PresetDrop.Value = name;
+            app.StatusLabel.Text = sprintf('已保存参数集：%s（%s）', ...
+                name, app.PresetsFile);
+        end
+
+        function onLoadPreset(app)
+            if isempty(app.Presets) || isempty(app.SourceFile)
+                uialert(app.UIFigure, '还没有可载入的参数集。', ...
+                    '没有参数集', 'Icon', 'warning');
+                return;
+            end
+            name = app.PresetDrop.Value;
+            idx = find(strcmp({app.Presets.name}, name), 1);
+            if isempty(idx)
+                return;
+            end
+            try
+                [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
+            catch err
+                uialert(app.UIFigure, err.message, '载入失败', 'Icon', 'error');
+                return;
+            end
+            app.refreshTable();
+            app.StatusLabel.Text = sprintf( ...
+                '已载入参数集：%s（匹配 %d，重名跳过 %d，未匹配 %d）', ...
+                name, stats.matched, stats.ambiguous, stats.unmatched);
+            if stats.unmatched > 0 || stats.ambiguous > 0
+                uialert(app.UIFigure, sprintf( ...
+                    ['载入“%s”：匹配 %d，重名跳过 %d，未匹配 %d。\n\n' ...
+                     '未匹配通常是因为脚本改过变量名或行号；参数集里的 id ' ...
+                     '保留的是保存时的位置。'], name, stats.matched, ...
+                    stats.ambiguous, stats.unmatched), ...
+                    '载入参数集', 'Icon', 'warning');
+            end
+        end
+
+        function onDeletePreset(app)
+            if isempty(app.Presets)
+                return;
+            end
+            name = app.PresetDrop.Value;
+            choice = uiconfirm(app.UIFigure, ...
+                sprintf('删除参数集“%s”？', name), '删除参数集', ...
+                'Options', {'删除', '取消'}, ...
+                'DefaultOption', 2, 'CancelOption', 2);
+            if ~strcmp(choice, '删除')
+                return;
+            end
+            keep = ~strcmp({app.Presets.name}, name);
+            app.Presets = app.Presets(keep);
+            try
+                mps.writePresets(app.SourceFile, app.Presets);
+            catch err
+                uialert(app.UIFigure, err.message, '删除失败', 'Icon', 'error');
+                return;
+            end
+            app.refreshPresets();
+            app.StatusLabel.Text = sprintf('已删除参数集：%s', name);
+        end
+
         function onCompareRuns(app)
             if isempty(app.PreviousOutDir) || ~isfolder(app.PreviousOutDir)
                 uialert(app.UIFigure, ...
@@ -1521,7 +1718,8 @@ classdef App < handle
                 app.SelectAllButton, app.ResetButton, ...
                 app.AnnotateTemplateButton, app.ImportAnnotationButton, ...
                 app.ClearAnnotationButton, app.LockButton, ...
-                app.CompareButton, ...
+                app.CompareButton, app.PresetSaveButton, ...
+                app.PresetLoadButton, app.PresetDeleteButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -1545,8 +1743,21 @@ classdef App < handle
                     app.ClearAnnotationButton.Enable = 'off';
                     app.LockButton.Enable = 'off';
                     app.CompareButton.Enable = 'off';
+                    app.PresetSaveButton.Enable = 'off';
+                    app.PresetLoadButton.Enable = 'off';
+                    app.PresetDeleteButton.Enable = 'off';
                 elseif app.IsFunctionFile
                     app.RunButton.Enable = 'off';
+                end
+                if ~isempty(app.SourceFile)
+                    app.PresetSaveButton.Enable = 'on';
+                    if isempty(app.Presets)
+                        app.PresetLoadButton.Enable = 'off';
+                        app.PresetDeleteButton.Enable = 'off';
+                    else
+                        app.PresetLoadButton.Enable = 'on';
+                        app.PresetDeleteButton.Enable = 'on';
+                    end
                 end
                 if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir) && ...
                         ~isempty(app.OutputDir) && isfolder(app.OutputDir)

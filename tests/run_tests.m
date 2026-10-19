@@ -188,7 +188,39 @@ function run_tests()
         'compare json not written');
     fprintf('  compare two runs: ok\n');
 
-    % --- 9. Function file detection --------------------------------------
+    % --- 9. Parameter presets --------------------------------------------
+    presetDemo = fullfile(tempdir, 'mps_preset_demo.m');
+    copyfile(demo, presetDemo);
+    pP = mps.scan(presetDemo);
+    for k = 1:numel(pP)
+        switch pP(k).name
+            case 'm', pP(k).newValue = '3'; pP(k).use = true;
+            case 'k', pP(k).newValue = '9'; pP(k).use = true;
+            case 'c'
+                pP(k).locked = true;
+                pP(k).newValue = pP(k).value;
+                pP(k).use = true;
+        end
+    end
+    mps.savePreset(presetDemo, '高刚度', pP);
+    assert(isfile(mps.presetsPath(presetDemo)), 'preset file not written');
+    rP = mps.readPresets(presetDemo);
+    assert(numel(rP) == 1, 'expected one preset');
+    assert(strcmp(rP(1).name, '高刚度'), 'preset name mismatch');
+    pFresh = mps.scan(presetDemo);
+    [pApplied, statsP] = mps.applyPreset(pFresh, rP(1));
+    assert(statsP.matched >= 3, 'preset should match m, k and c');
+    mi = find(strcmp({pApplied.name}, 'm'), 1);
+    assert(strcmp(pApplied(mi).newValue, '3'), 'preset m value not applied');
+    ci = find(strcmp({pApplied.name}, 'c'), 1);
+    assert(pApplied(ci).locked, 'preset lock not applied');
+    assert(strcmp(pApplied(ci).newValue, pApplied(ci).value), ...
+        'locked preset entry must keep the original value');
+    delete(mps.presetsPath(presetDemo));
+    delete(presetDemo);
+    fprintf('  parameter presets: ok\n');
+
+    % --- 10. Function file detection -------------------------------------
     funcFile = fullfile(tempdir, 'mps_func_test.m');
     fid = fopen(funcFile, 'w', 'n', 'UTF-8');
     fprintf(fid, 'function y=f(x)\ny=x+1;\nend\n');
