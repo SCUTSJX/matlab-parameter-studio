@@ -59,7 +59,13 @@ function params = scan(filePath, varargin)
         txt = lines{ck};
         if cpos > 0
             if cpos + 2 <= numel(txt) && strcmp(txt(cpos:cpos+2), '...')
-                lineComments{ck} = '';   % continuation, not a description
+                % A continuation may still carry a trailing % comment.
+                pct = find(txt(cpos:end) == '%', 1);
+                if isempty(pct)
+                    lineComments{ck} = '';
+                else
+                    lineComments{ck} = strtrim(txt(cpos+pct:end));
+                end
             else
                 lineComments{ck} = strtrim(txt(cpos+1:end));
             end

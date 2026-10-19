@@ -185,7 +185,11 @@ classdef App < handle
         % -----------------------------------------------------------------
         function createUI(app)
             app.UIFigure = uifigure('Name', 'MATLAB Parameter Studio', ...
-                'Position', [80 60 1340 840], 'Theme', 'light');
+                'Position', [80 60 1340 840]);
+            try
+                app.UIFigure.Theme = 'light';   % R2025a+
+            catch
+            end
             app.UIFigure.CloseRequestFcn = @(s, e) app.onClose();
 
             root = uigridlayout(app.UIFigure, [3 1]);
@@ -951,6 +955,12 @@ classdef App < handle
                 return;
             end
             target = fullfile(path, file);
+            if strcmpi(target, app.SourceFile)
+                uialert(app.UIFigure, ...
+                    '不能覆盖原文件。请使用 _tuned 后缀或其他文件名。', ...
+                    '保存失败', 'Icon', 'warning');
+                return;
+            end
 
             stamp = datestr(now, 'yyyy-mm-dd HH:MM:SS');
             footer = sprintf('%% ---- MATLAB Parameter Studio overrides (%s) ----\n', stamp);
