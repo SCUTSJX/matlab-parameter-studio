@@ -77,6 +77,8 @@
 
 ### 给参数加注释（让 AI 写含义）
 
+![注释列](docs/screenshot_annotations.png)
+
 参数名叫 `Kp`、`eta`、`request.gains.gamma2` 时，光看名字经常不知道是什么。可以走这条 AI 协作流程：
 
 1. 打开 `.m` 文件，点左侧的 **“生成注释 JSON”**。默认生成 `<文件名>_annotations.json`，每个参数都带有：
