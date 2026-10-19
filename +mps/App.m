@@ -12,6 +12,8 @@ classdef App < handle
         LastWorkspace = struct()
         LastReport = ''
         OutputDir = ''
+        PreviousRun = struct()
+        PreviousOutDir = ''
     end
 
     properties (Access = private)
@@ -27,9 +29,10 @@ classdef App < handle
         SelectAllButton, ResetButton, PlotButton, SavePlotButton, ExportCsvButton
         OpenReportInline
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
-        ClearAnnotationButton
+        ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
         SourceLines = {}
         VisibleIdx = []
+        SelectedRow = 0
         IsFunctionFile = false
         CustomPlotPath = ''
         LastAnnotations = struct([])
@@ -38,8 +41,18 @@ classdef App < handle
     end
 
     methods
-        function app = App()
+        function app = App(varargin)
+            visible = 'on';
+            for k = 1:2:numel(varargin)
+                if k + 1 > numel(varargin), break; end
+                if strcmpi(char(varargin{k}), 'Visible')
+                    visible = char(varargin{k+1});
+                end
+            end
             app.createUI();
+            if strcmpi(visible, 'off')
+                app.UIFigure.Visible = 'off';
+            end
             app.UIFigure.UserData = app;
         end
 
@@ -126,6 +139,9 @@ classdef App < handle
             app.OutputDir = '';
             app.CustomPlotPath = '';
             app.FigurePaths = {};
+            app.PreviousRun = struct();
+            app.PreviousOutDir = '';
+            app.SelectedRow = 0;
 
             app.FileLabel.Text = filePath;
             app.FileLabel.FontColor = [0.12 0.12 0.12];
@@ -155,6 +171,8 @@ classdef App < handle
             app.AnnotateTemplateButton.Enable = 'on';
             app.ImportAnnotationButton.Enable = 'on';
             app.ClearAnnotationButton.Enable = 'on';
+            app.LockButton.Enable = 'on';
+            app.CompareButton.Enable = 'off';
             app.ReportButton.Enable = 'off';
             app.FolderButton.Enable = 'off';
             app.CloseFiguresButton.Enable = 'off';
@@ -188,6 +206,9 @@ classdef App < handle
             value = char(value);
             for k = 1:numel(app.Params)
                 if strcmp(app.Params(k).name, name)
+                    if app.Params(k).locked
+                        continue;   % locked parameters stay pinned
+                    end
                     app.Params(k).newValue = value;
                     app.Params(k).isChanged = ~strcmp(strtrim(app.Params(k).value), ...
                         strtrim(value));
@@ -250,6 +271,20 @@ classdef App < handle
             %CLEARANNOTATIONS Remove all in-memory annotations.
             app.onClearAnnotations();
         end
+
+        function toggleLock(app, name)
+            %TOGGLELOCK Lock or unlock a parameter by name.
+            for k = 1:numel(app.Params)
+                if strcmp(app.Params(k).name, name)
+                    app.Params(k).locked = ~app.Params(k).locked;
+                    if app.Params(k).locked
+                        app.Params(k).newValue = app.Params(k).value;
+                        app.Params(k).isChanged = false;
+                    end
+                end
+            end
+            app.refreshTable();
+        end
     end
 
     methods (Access = private)
@@ -268,9 +303,9 @@ classdef App < handle
             root.Padding = [10 10 10 8];
             root.RowSpacing = 8;
 
-            tb = uigridlayout(root, [1 9]);
+            tb = uigridlayout(root, [1 10]);
             tb.Layout.Row = 1;
-            tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 100, 100, 100};
+            tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 100, 100, 100, 100};
             tb.Padding = [0 0 0 0];
             tb.ColumnSpacing = 6;
 
@@ -312,6 +347,10 @@ classdef App < handle
             app.CloseFiguresButton = uibutton(tb, 'Text', '关闭结果图', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCloseFigures());
             app.CloseFiguresButton.Layout.Column = 9;
+
+            app.CompareButton = uibutton(tb, 'Text', '对比上次运行', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCompareRuns());
+            app.CompareButton.Layout.Column = 10;
 
             main = uigridlayout(root, [1 2]);
             main.Layout.Row = 2;
@@ -356,9 +395,9 @@ classdef App < handle
                 'ButtonPushedFcn', @(s, e) app.onReset());
             app.ResetButton.Layout.Column = 5;
 
-            ag = uigridlayout(lg, [1 4]);
+            ag = uigridlayout(lg, [1 6]);
             ag.Layout.Row = 2;
-            ag.ColumnWidth = {130, '1x', 100, 100};
+            ag.ColumnWidth = {130, '1x', 96, 96, 96, 130};
             ag.Padding = [0 0 0 0];
             ag.ColumnSpacing = 6;
 
@@ -381,11 +420,20 @@ classdef App < handle
                 'ButtonPushedFcn', @(s, e) app.onClearAnnotations());
             app.ClearAnnotationButton.Layout.Column = 4;
 
+            app.LockButton = uibutton(ag, ...
+                'Text', '锁定选中', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onToggleLock());
+            app.LockButton.Layout.Column = 5;
+
+            app.KeepFiguresCheck = uicheckbox(ag, ...
+                'Text', '保留结果图窗', 'Value', false);
+            app.KeepFiguresCheck.Layout.Column = 6;
+
             app.Table = uitable(lg, ...
-                'ColumnName', {'使用', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
-                'ColumnEditable', [true false false true false false false false], ...
-                'ColumnFormat', {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char'}, ...
-                'ColumnWidth', {44, 180, 78, 78, 38, 76, 130, '1x'}, ...
+                'ColumnName', {'使用', '锁定', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
+                'ColumnEditable', [true true false false true false false false false], ...
+                'ColumnFormat', {'logical', 'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char'}, ...
+                'ColumnWidth', {40, 46, 160, 70, 70, 34, 68, 110, '1x'}, ...
                 'RowName', [], ...
                 'CellEditCallback', @(s, e) app.onCellEdit(s, e), ...
                 'CellSelectionCallback', @(s, e) app.onCellSelect(s, e));
@@ -535,8 +583,12 @@ classdef App < handle
             end
 
             app.setBusy(true);
-            d = uiprogressdlg(app.UIFigure, 'Title', 'MATLAB Parameter Studio', ...
-                'Message', '准备参数...', 'Indeterminate', 'on');
+            if strcmp(app.UIFigure.Visible, 'on')
+                d = uiprogressdlg(app.UIFigure, 'Title', 'MATLAB Parameter Studio', ...
+                    'Message', '准备参数...', 'Indeterminate', 'on');
+            else
+                d = [];   % hidden automation mode
+            end
             oldHV = app.UIFigure.HandleVisibility;
             app.UIFigure.HandleVisibility = 'off';
             cleanupObj = onCleanup(@() app.finishRun(d, oldHV)); %#ok<NASGU>
@@ -583,9 +635,31 @@ classdef App < handle
                 end
                 scriptCleaner = onCleanup(@() app.cleanupTempScript(tempScript, keepScript)); %#ok<NASGU>
 
-                d.Message = '运行 MATLAB 脚本...';
-                drawnow;
+                setProgress(d, '运行 MATLAB 脚本...');
+
+                % Create the script's figures invisibly, capture them, and
+                % only show them again if the user asked to keep them.
+                oldFigVis = get(groot, 'defaultFigureVisible');
+                set(groot, 'defaultFigureVisible', 'off');
+                figVisCleaner = onCleanup(@() set(groot, ...
+                    'defaultFigureVisible', oldFigVis)); %#ok<NASGU>
                 r = mps.runScript(app.SourceFile, tempScript, outDir);
+                clear figVisCleaner;
+                if app.KeepFiguresCheck.Value
+                    for fk = 1:numel(r.figureHandles)
+                        if isvalid(r.figureHandles(fk))
+                            set(r.figureHandles(fk), 'Visible', 'on');
+                        end
+                    end
+                else
+                    for fk = 1:numel(r.figureHandles)
+                        if isvalid(r.figureHandles(fk))
+                            delete(r.figureHandles(fk));
+                        end
+                    end
+                    r.figureHandles = gobjects(0);
+                end
+
                 try
                     if ~isfile(keepScript) && ~strcmpi(tempScript, keepScript)
                         copyfile(tempScript, keepScript);
@@ -596,11 +670,14 @@ classdef App < handle
                 catch
                 end
                 clear scriptCleaner;
+                if isfield(app.LastRun, 'outDir') && isfolder(app.LastRun.outDir)
+                    app.PreviousRun = app.LastRun;
+                    app.PreviousOutDir = app.LastRun.outDir;
+                end
                 app.LastRun = r;
                 app.LastWorkspace = r.workspaceData;
 
-                d.Message = '生成 HTML 报告...';
-                drawnow;
+                setProgress(d, '生成 HTML 报告...');
                 app.LastReport = mps.writeReport(outDir, app.SourceFile, params, r);
 
                 app.refreshResults();
@@ -614,6 +691,9 @@ classdef App < handle
                 app.ReportButton.Enable = 'on';
                 app.FolderButton.Enable = 'on';
                 app.CloseFiguresButton.Enable = 'on';
+                if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir)
+                    app.CompareButton.Enable = 'on';
+                end
 
                 if r.ok
                     app.StatusLabel.Text = sprintf( ...
@@ -691,7 +771,7 @@ classdef App < handle
         % -----------------------------------------------------------------
         function refreshTable(app)
             if isempty(app.Params)
-                app.Table.Data = cell(0, 8);
+                app.Table.Data = cell(0, 9);
                 app.VisibleIdx = [];
                 app.CountLabel.Text = '0 / 0';
                 app.updateAnnotationStatus();
@@ -728,7 +808,7 @@ classdef App < handle
             end
             app.VisibleIdx = idx;
 
-            data = cell(numel(idx), 8);
+            data = cell(numel(idx), 9);
             for j = 1:numel(idx)
                 p = app.Params(idx(j));
                 note = p.note;
@@ -738,14 +818,20 @@ classdef App < handle
                 if numel(note) > 120
                     note = [note(1:117), '...'];
                 end
+                if p.locked
+                    nameCell = ['[锁] ' p.name];
+                else
+                    nameCell = p.name;
+                end
                 data{j,1} = p.use;
-                data{j,2} = p.name;
-                data{j,3} = p.value;
-                data{j,4} = p.newValue;
-                data{j,5} = p.line;
-                data{j,6} = categoryLabel(p.category);
-                data{j,7} = note;
-                data{j,8} = annotationText(p);
+                data{j,2} = p.locked;
+                data{j,3} = nameCell;
+                data{j,4} = p.value;
+                data{j,5} = p.newValue;
+                data{j,6} = p.line;
+                data{j,7} = categoryLabel(p.category);
+                data{j,8} = note;
+                data{j,9} = annotationText(p);
             end
             app.Table.Data = data;
             app.CountLabel.Text = sprintf('%d / %d · 已修改 %d', ...
@@ -774,7 +860,22 @@ classdef App < handle
             idx = app.VisibleIdx(row);
             if col == 1
                 app.Params(idx).use = logical(event.NewData);
-            elseif col == 4
+            elseif col == 2
+                lock = logical(event.NewData);
+                app.Params(idx).locked = lock;
+                if lock
+                    % Locking pins the original value immediately.
+                    app.Params(idx).newValue = app.Params(idx).value;
+                    app.Params(idx).isChanged = false;
+                end
+            elseif col == 5
+                if app.Params(idx).locked
+                    uialert(app.UIFigure, ...
+                        '该参数已锁定，不能修改。请先在“锁定”列取消勾选。', ...
+                        '参数已锁定', 'Icon', 'warning');
+                    app.refreshTable();
+                    return;
+                end
                 newVal = strtrim(char(event.NewData));
                 if isempty(newVal)
                     newVal = app.Params(idx).value;
@@ -805,6 +906,8 @@ classdef App < handle
                 return;
             end
             idx = app.VisibleIdx(row);
+            app.SelectedRow = row;
+            app.updateLockButton();
             if isempty(app.SourceLines)
                 app.SourcePreview.Value = {''};
                 return;
@@ -953,6 +1056,69 @@ classdef App < handle
             app.AnnotationFile = '';
             app.refreshTable();
             app.StatusLabel.Text = '已清空当前参数上的注释。';
+        end
+
+        function updateLockButton(app)
+            if app.SelectedRow < 1 || app.SelectedRow > numel(app.VisibleIdx)
+                app.LockButton.Text = '锁定选中';
+                return;
+            end
+            idx = app.VisibleIdx(app.SelectedRow);
+            if app.Params(idx).locked
+                app.LockButton.Text = '解锁选中';
+            else
+                app.LockButton.Text = '锁定选中';
+            end
+        end
+
+        function onToggleLock(app)
+            if app.SelectedRow < 1 || app.SelectedRow > numel(app.VisibleIdx)
+                uialert(app.UIFigure, '请先在参数表里点选一行。', ...
+                    '没有选中行', 'Icon', 'warning');
+                return;
+            end
+            idx = app.VisibleIdx(app.SelectedRow);
+            app.Params(idx).locked = ~app.Params(idx).locked;
+            if app.Params(idx).locked
+                app.Params(idx).newValue = app.Params(idx).value;
+                app.Params(idx).isChanged = false;
+                app.StatusLabel.Text = sprintf('已锁定：%s（新值保持原值）', ...
+                    app.Params(idx).name);
+            else
+                app.StatusLabel.Text = sprintf('已解锁：%s', app.Params(idx).name);
+            end
+            app.refreshTable();
+            app.updateLockButton();
+        end
+
+        function onCompareRuns(app)
+            if isempty(app.PreviousOutDir) || ~isfolder(app.PreviousOutDir)
+                uialert(app.UIFigure, ...
+                    '还没有上一次运行可以对比。请先运行两次（改参数后再运行一次）。', ...
+                    '没有可对比的运行', 'Icon', 'warning');
+                return;
+            end
+            if isempty(app.OutputDir) || ~isfolder(app.OutputDir)
+                uialert(app.UIFigure, '当前运行结果不存在。', ...
+                    '没有当前运行', 'Icon', 'warning');
+                return;
+            end
+            target = fullfile(app.OutputDir, 'compare.html');
+            try
+                mps.compareRuns(app.PreviousOutDir, app.OutputDir, target);
+            catch err
+                uialert(app.UIFigure, err.message, '对比失败', 'Icon', 'error');
+                return;
+            end
+            app.StatusLabel.Text = sprintf('运行对比报告已生成：%s', target);
+            try
+                web(target, '-browser');
+            catch
+                try
+                    winopen(target);
+                catch
+                end
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1354,7 +1520,8 @@ classdef App < handle
                 app.ExportButton, app.CloseFiguresButton, ...
                 app.SelectAllButton, app.ResetButton, ...
                 app.AnnotateTemplateButton, app.ImportAnnotationButton, ...
-                app.ClearAnnotationButton, ...
+                app.ClearAnnotationButton, app.LockButton, ...
+                app.CompareButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -1376,8 +1543,16 @@ classdef App < handle
                     app.AnnotateTemplateButton.Enable = 'off';
                     app.ImportAnnotationButton.Enable = 'off';
                     app.ClearAnnotationButton.Enable = 'off';
+                    app.LockButton.Enable = 'off';
+                    app.CompareButton.Enable = 'off';
                 elseif app.IsFunctionFile
                     app.RunButton.Enable = 'off';
+                end
+                if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir) && ...
+                        ~isempty(app.OutputDir) && isfolder(app.OutputDir)
+                    app.CompareButton.Enable = 'on';
+                else
+                    app.CompareButton.Enable = 'off';
                 end
                 if isempty(app.LastReport)
                     app.ReportButton.Enable = 'off';
@@ -1397,6 +1572,15 @@ classdef App < handle
             drawnow;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function setProgress(d, msg)
+%SETPROGRESS Update a progress dialog if it exists, then flush the UI.
+    if ~isempty(d) && isvalid(d)
+        d.Message = msg;
+    end
+    drawnow;
 end
 
 % -------------------------------------------------------------------------

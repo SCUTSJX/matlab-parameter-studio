@@ -97,12 +97,20 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
     if isempty(used)
         out{end+1} = '<p class="muted">本次没有勾选任何参数。脚本仍然按原值运行。</p>';
     else
-        out{end+1} = '<table><thead><tr><th>参数</th><th>原值</th><th>新值</th><th>行</th><th>类型</th><th>注释</th><th>代码说明</th></tr></thead><tbody>';
+        out{end+1} = '<table><thead><tr><th>参数</th><th>锁定</th><th>原值</th><th>新值</th><th>行</th><th>类型</th><th>注释</th><th>代码说明</th></tr></thead><tbody>';
         for k = 1:numel(used)
             p = used(k);
             changed = ~strcmp(strtrim(p.value), strtrim(p.newValue));
+            locked = isfield(p, 'locked') && p.locked;
             rowClass = '';
             if changed, rowClass = ' class="changed"'; end
+            if locked
+                lockCell = '锁';
+                nameCell = sprintf('[锁] %s', htmlEscape(p.name));
+            else
+                lockCell = '';
+                nameCell = htmlEscape(p.name);
+            end
             if changed
                 oldCell = sprintf('<span class="old">%s</span>', htmlEscape(p.value));
                 newCell = sprintf('<span class="new">%s</span>', htmlEscape(p.newValue));
@@ -110,8 +118,8 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
                 oldCell = htmlEscape(p.value);
                 newCell = htmlEscape(p.value);
             end
-            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
-                rowClass, htmlEscape(p.name), oldCell, newCell, ...
+            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
+                rowClass, nameCell, lockCell, oldCell, newCell, ...
                 p.line, htmlEscape(categoryLabel(p.category)), ...
                 htmlEscape(annotationText(p)), htmlEscape(p.note)); %#ok<AGROW>
         end
@@ -178,17 +186,15 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
 
     % Parameter record for later reuse / audits.
     record = struct('name', {}, 'value', {}, 'newValue', {}, 'use', {}, ...
-        'line', {}, 'category', {}, 'note', {}, 'description', {}, 'unit', {});
+        'line', {}, 'category', {}, 'note', {}, 'description', {}, 'unit', {}, ...
+        'locked', {});
     for k = 1:numel(params)
-        description = '';
-        unit = '';
-        if isfield(params, 'description'), description = params(k).description; end
-        if isfield(params, 'unit'), unit = params(k).unit; end
+        [description, unit, locked] = localFields(params(k));
         record(end+1) = struct('name', params(k).name, 'value', params(k).value, ...
             'newValue', params(k).newValue, 'use', params(k).use, ...
             'line', params(k).line, 'category', params(k).category, ...
             'note', params(k).note, 'description', description, ...
-            'unit', unit); %#ok<AGROW>
+            'unit', unit, 'locked', locked); %#ok<AGROW>
     end
     jsonPath = fullfile(outDir, 'parameters.json');
     fid2 = fopen(jsonPath, 'w', 'n', 'UTF-8');
@@ -215,6 +221,16 @@ function s = htmlEscape(s)
     s = strrep(s, '>', '&gt;');
     s = strrep(s, '"', '&quot;');
     s = strrep(s, '''', '&#39;');
+end
+
+% -------------------------------------------------------------------------
+function [description, unit, locked] = localFields(p)
+    description = '';
+    unit = '';
+    locked = false;
+    if isfield(p, 'description'), description = p.description; end
+    if isfield(p, 'unit'), unit = p.unit; end
+    if isfield(p, 'locked'), locked = p.locked; end
 end
 
 % -------------------------------------------------------------------------

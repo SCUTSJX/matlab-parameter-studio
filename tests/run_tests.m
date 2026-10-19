@@ -10,6 +10,14 @@ function run_tests()
     addpath(root);
     fprintf('== MATLAB Parameter Studio tests ==\n');
 
+    % Keep the test run quiet: figures created by the demo scripts are
+    % invisible, and any figures created during the tests are closed on
+    % exit (the caller's existing figures are left alone).
+    oldVis = get(groot, 'defaultFigureVisible');
+    set(groot, 'defaultFigureVisible', 'off');
+    beforeFigs = findall(groot, 'Type', 'figure');
+    cleanupObj = onCleanup(@() cleanupTestFigures(oldVis, beforeFigs)); %#ok<NASGU>
+
     demo = fullfile(root, 'demo', 'demo_simulation.m');
     assert(isfile(demo), 'demo script missing');
 
@@ -120,7 +128,67 @@ function run_tests()
     assert(stats2.matched == 1, 'template entry should match by id');
     fprintf('  AI annotations: ok\n');
 
-    % --- 7. Function file detection --------------------------------------
+    % --- 7. Locked parameters --------------------------------------------
+    pLock = mps.scan(demo);
+    for k = 1:numel(pLock)
+        switch pLock(k).name
+            case 'm'
+                pLock(k).locked = true;
+                pLock(k).newValue = '2';
+                pLock(k).use = true;
+            case 'k'
+                pLock(k).locked = false;
+                pLock(k).newValue = '8';
+                pLock(k).use = true;
+        end
+    end
+    lockDir = fullfile(tempdir, 'mps_lock_test');
+    if isfolder(lockDir)
+        rmdir(lockDir, 's');
+    end
+    mkdir(lockDir);
+    lockScript = fullfile(lockDir, 'run_script.m');
+    [~, lockedApplied] = mps.applyEdits(demo, pLock, lockScript, ...
+        'NeutralizeCloseAll', true);
+    lockedNames = {lockedApplied.name};
+    assert(~any(strcmp(lockedNames, 'm')), 'locked parameter m must not change');
+    assert(any(strcmp(lockedNames, 'k')), 'unlocked parameter k should change');
+    rLock = mps.runScript(demo, lockScript, lockDir);
+    assert(abs(rLock.workspaceData.m - 1.0) < 1e-12, ...
+        'locked m should keep its original value');
+    assert(abs(rLock.workspaceData.k - 8) < 1e-12, ...
+        'unlocked k should be overridden');
+    fprintf('  locked parameters: ok\n');
+
+    % --- 8. Compare two runs ---------------------------------------------
+    pC = mps.scan(demo);
+    for k = 1:numel(pC)
+        switch pC(k).name
+            case 'm', pC(k).newValue = '2'; pC(k).use = true;
+            case 'k', pC(k).newValue = '6'; pC(k).use = true;
+            case 'c', pC(k).newValue = '0.5'; pC(k).use = true;
+        end
+    end
+    outDir2 = fullfile(tempdir, 'mps_tests_run2');
+    if isfolder(outDir2)
+        rmdir(outDir2, 's');
+    end
+    mkdir(outDir2);
+    script2 = fullfile(outDir2, 'run_script.m');
+    mps.applyEdits(demo, pC, script2, 'NeutralizeCloseAll', true);
+    r2 = mps.runScript(demo, script2, outDir2);
+    assert(r2.ok, r2.error);
+    cmpPath = fullfile(outDir2, 'compare.html');
+    mps.compareRuns(outDir, outDir2, cmpPath);
+    assert(isfile(cmpPath), 'compare report not written');
+    html = fileread(cmpPath);
+    assert(contains(html, '参数对比'), 'compare report missing parameter table');
+    assert(contains(html, '有差异'), 'compare report missing difference status');
+    assert(isfile(fullfile(outDir2, 'compare.json')), ...
+        'compare json not written');
+    fprintf('  compare two runs: ok\n');
+
+    % --- 9. Function file detection --------------------------------------
     funcFile = fullfile(tempdir, 'mps_func_test.m');
     fid = fopen(funcFile, 'w', 'n', 'UTF-8');
     fprintf(fid, 'function y=f(x)\ny=x+1;\nend\n');
@@ -129,4 +197,18 @@ function run_tests()
     assert(~isempty(p4), 'function bodies should still be scanned');
 
     fprintf('ALL TESTS PASSED\n');
+end
+
+% -------------------------------------------------------------------------
+function cleanupTestFigures(oldVis, beforeFigs)
+    set(groot, 'defaultFigureVisible', oldVis);
+    after = findall(groot, 'Type', 'figure');
+    for k = 1:numel(after)
+        if ~isvalid(after(k))
+            continue;
+        end
+        if isempty(beforeFigs) || ~any(after(k) == beforeFigs)
+            delete(after(k));
+        end
+    end
 end

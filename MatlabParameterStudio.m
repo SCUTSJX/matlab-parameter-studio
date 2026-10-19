@@ -1,8 +1,9 @@
-function app = MatlabParameterStudio()
+function app = MatlabParameterStudio(varargin)
 %MATLABPARAMETERSTUDIO Launch the MATLAB Parameter Studio app.
 %
 %   Usage:
 %       MatlabParameterStudio
+%       MatlabParameterStudio('Visible', 'off')   % automation / tests
 %
 %   The app scans a .m script for editable numeric values, lets you change
 %   them, runs the script, captures figures/workspace variables, and writes
@@ -13,7 +14,7 @@ function app = MatlabParameterStudio()
 
     root = fileparts(mfilename('fullpath'));
     addpath(root);
-    app = mps.App();
+    app = mps.App(varargin{:});
     if nargout == 0
         % The app keeps itself alive through UIFigure.UserData.  Drop the
         % local reference so the command line stays clean.

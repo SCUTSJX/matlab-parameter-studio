@@ -51,6 +51,7 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
     for k = 1:numel(params)
         p = params(k);
         if ~isfield(p, 'use') || ~p.use, continue; end
+        if isfield(p, 'locked') && p.locked, continue; end
         oldText = strtrim(p.value);
         newText = strtrim(p.newValue);
         if strcmp(oldText, newText), continue; end
