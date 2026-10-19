@@ -1,0 +1,4 @@
+parameter_studio_runs/
+mps_run_*.m
+*.asv
+*.autosave
