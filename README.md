@@ -46,6 +46,7 @@
 
 - **参数表**：`使用`（勾选参与运行的参数）、`锁定`（钉死原值，不允许修改）、`参数`（推导出的名字）、`当前值`、`新值`（可编辑）、`行`、`类型`、`说明`、`注释`（AI 注释列）。
 - **参数集**：下拉选择已保存的参数方案，名称框输入新方案名，点“保存为参数集 / 载入 / 删除”管理。
+- **批量扫描...**：给一个或多个参数填扫描值，一次跑多组并出叠加曲线/报告（见下文）。
 - **筛选**：
   - `推荐参数`：只显示推荐分数较高的参数（默认）。
   - `全部数字`：显示脚本中所有数字字面量，包括绘图样式、数组尺寸、索引等低置信度数字，由你决定是否勾选。
@@ -137,6 +138,35 @@ AI 返回的格式很宽松，以下几种都支持：
 - 命令行动态用法：`app.saveCurrentPreset('基线')`、`app.applyPresetByName('基线')`、`app.listPresets()`；纯函数用法：`mps.savePreset(file, name, params)`、`mps.readPresets(file)`、`mps.applyPreset(params, preset)`。
 - 匹配规则和注释一致：优先 `id`，其次 `name + line`，最后唯一 `name`；脚本改过变量名或行号时报告未匹配数量，不会乱套。
 
+### 多参数批量扫描（扫参）
+
+![扫参叠加曲线示例](docs/screenshot_sweep.png)
+
+- 点参数区的“**批量扫描...**”，在弹出的窗口里给一个或多个参数填扫描值：
+  - 离散值：`1,2,4` 或 `0.5 0.75 1`；
+  - 冒号范围：`1:0.5:5`、`1:2:9`；
+  - 多个参数会做笛卡尔积，右上角实时显示预计组数，上限 24 组（防止误填出几百次运行）。
+- 勾选“叠加曲线”后，从上次运行的工作区里选 X/Y 变量（例如 `t` 与 `y`），扫描结束会把每组曲线画在同一张图上。
+- 点“开始扫描”后，每个组合在独立子目录里运行：
+
+  ```text
+  parameter_studio_runs/<时间戳>_sweep/
+  ├── run_01/ ... run_24/      % 每组的脚本副本、图、workspace.mat、日志
+  ├── overlay.png              % 叠加曲线（勾选时）
+  ├── sweep_report.html        % 组表 + 叠加曲线 + 每组输出图
+  └── sweep.json               % 机器可读的扫描记录
+  ```
+
+- 扫描期间图窗默认不可见，不会弹一堆窗口；需要看图就勾“保留结果图窗”。
+- 命令行/自动化用法：
+
+  ```matlab
+  summary = app.runSweepWithValues({'k'}, {[4 8]}, 't', {'y'});
+  % summary.ok / sweepRoot / count / report / overlayPath
+  ```
+
+- 也可以直接用核心函数：`mps.parseSweepValues('1:0.5:5')`、`mps.sweepScenarios({'k','c'}, {...}, 24)`、`mps.writeSweepReport(...)`。
+
 ### 对比两次运行结果
 
 典型流程：先用一组参数运行一次 → 改参数再运行一次 → 点工具栏“对比上次运行”。
@@ -221,6 +251,10 @@ MatlabParameterStudio.m      启动入口（函数）
 +mps/writePresets.m          写回参数集文件
 +mps/savePreset.m            保存/覆盖一个命名参数集
 +mps/applyPreset.m           载入参数集（新值/勾选/锁定）
++mps/parseSweepValues.m      解析 1,2,4 / 1:0.5:5 扫描值
++mps/sweepScenarios.m        笛卡尔积扫描组合
++mps/SweepDialog.m           批量扫描配置窗口
++mps/writeSweepReport.m      批量扫描 HTML 报告 + sweep.json
 demo/demo_simulation.m       弹簧-阻尼示例
 demo/relative_demo.m         相对路径加载示例
 tests/run_tests.m            自测
@@ -235,7 +269,7 @@ addpath('tests')
 run_tests
 ```
 
-测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、AI 注释模板与导入、锁定参数、运行对比、参数集预设、函数文件扫描。
+测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、AI 注释模板与导入、锁定参数、运行对比、参数集预设、批量扫描、函数文件扫描。
 
 ## 已知限制
 

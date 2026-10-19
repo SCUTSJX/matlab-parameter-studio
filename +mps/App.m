@@ -31,7 +31,7 @@ classdef App < handle
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
-        PresetDeleteButton
+        PresetDeleteButton, SweepButton
         SourceLines = {}
         VisibleIdx = []
         SelectedRow = 0
@@ -173,6 +173,11 @@ classdef App < handle
             end
             app.SaveButton.Enable = 'on';
             app.ExportButton.Enable = 'on';
+            if app.IsFunctionFile
+                app.SweepButton.Enable = 'off';
+            else
+                app.SweepButton.Enable = 'on';
+            end
             app.AnnotateTemplateButton.Enable = 'on';
             app.ImportAnnotationButton.Enable = 'on';
             app.ClearAnnotationButton.Enable = 'on';
@@ -316,6 +321,36 @@ classdef App < handle
             end
             [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
             app.refreshTable();
+        end
+
+        function summary = runSweepWithValues(app, names, valueLists, xName, yNames)
+            %RUNSWEEPWITHVALUES Programmatic sweep (no dialog).
+            %
+            %   app.runSweepWithValues({'k','c'}, {1:2:9, [0.1 0.2]}, ...
+            %                          't', {'y'})
+            if ischar(names) || isstring(names)
+                names = cellstr(names);
+            end
+            if isnumeric(valueLists)
+                valueLists = {valueLists};
+            end
+            activeIdx = [];
+            for k = 1:numel(names)
+                idx = find(strcmp({app.Params.name}, names{k}), 1);
+                if isempty(idx)
+                    error('mps:App:paramNotFound', '找不到参数：%s', names{k});
+                end
+                activeIdx(end+1) = idx; %#ok<AGROW>
+            end
+            if nargin < 4 || isempty(xName)
+                xName = '';
+            end
+            if nargin < 5 || isempty(yNames)
+                yNames = {};
+            end
+            overlay = ~isempty(xName) && ~isempty(yNames);
+            summary = app.runSweep(activeIdx, valueLists, overlay, ...
+                xName, yNames);
         end
     end
 
@@ -461,9 +496,9 @@ classdef App < handle
                 'Text', '保留结果图窗', 'Value', false);
             app.KeepFiguresCheck.Layout.Column = 6;
 
-            pg2 = uigridlayout(lg, [1 5]);
+            pg2 = uigridlayout(lg, [1 6]);
             pg2.Layout.Row = 3;
-            pg2.ColumnWidth = {150, '1x', 96, 72, 72};
+            pg2.ColumnWidth = {150, '1x', 96, 72, 72, 100};
             pg2.Padding = [0 0 0 0];
             pg2.ColumnSpacing = 6;
 
@@ -489,6 +524,11 @@ classdef App < handle
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(s, e) app.onDeletePreset());
             app.PresetDeleteButton.Layout.Column = 5;
+
+            app.SweepButton = uibutton(pg2, 'Text', '批量扫描...', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onOpenSweep());
+            app.SweepButton.Layout.Column = 6;
 
             app.Table = uitable(lg, ...
                 'ColumnName', {'使用', '锁定', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
@@ -1288,6 +1328,321 @@ classdef App < handle
             app.StatusLabel.Text = sprintf('已删除参数集：%s', name);
         end
 
+        % ---- Batch sweep ------------------------------------------
+        function onOpenSweep(app)
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            if app.IsFunctionFile
+                uialert(app.UIFigure, ...
+                    '这是函数文件，不能直接扫描运行。请打开调用它的脚本。', ...
+                    '无法批量扫描', 'Icon', 'warning');
+                return;
+            end
+            if app.Busy
+                return;
+            end
+            dlg = mps.SweepDialog(app.Params, app.LastWorkspace);
+            uiwait(dlg.UIFigure);
+            result = dlg.Result;
+            delete(dlg);
+            if ~isstruct(result) || ~isfield(result, 'activeIdx') || ...
+                    isempty(result.activeIdx)
+                return;   % cancelled
+            end
+            app.runSweep(result.activeIdx, result.values, ...
+                result.overlay, result.xName, result.yNames);
+        end
+
+        function summary = runSweep(app, activeIdx, values, overlay, xName, yNames)
+            %RUNSWEEP Execute the cartesian product and build reports.
+            summary = struct('ok', false, 'sweepRoot', '', 'count', 0, ...
+                'report', '', 'overlayPath', '');
+            if isempty(app.SourceFile) || isempty(activeIdx)
+                return;
+            end
+
+            app.setBusy(true);
+            [sweepRoot, d, oldHV, oldVis, cleanupObj] = app.prepareSweep();
+
+            try
+                names = {app.Params(activeIdx).name};
+                scenarios = mps.sweepScenarios(names, values, 24);
+                results = struct('label', {}, 'runDir', {}, 'ok', {}, ...
+                    'error', {}, 'figures', {}, 'elapsed', {}, ...
+                    'workspaceData', {});
+
+                for k = 1:numel(scenarios)
+                    if ~isempty(d) && isvalid(d)
+                        d.Value = (k - 1) / numel(scenarios);
+                        d.Message = sprintf('运行 %d/%d：%s', ...
+                            k, numel(scenarios), scenarios(k).label);
+                        drawnow;
+                    end
+                    runDir = fullfile(sweepRoot, sprintf('run_%02d', k));
+                    if ~isfolder(runDir)
+                        mkdir(runDir);
+                    end
+
+                    params = app.Params;
+                    for j = 1:numel(activeIdx)
+                        params(activeIdx(j)).newValue = ...
+                            num2str(scenarios(k).values{j}, '%.10g');
+                        params(activeIdx(j)).use = true;
+                    end
+
+                    [tempScript, keepScript] = app.makeTempScript(runDir);
+                    mps.applyEdits(app.SourceFile, params, tempScript, ...
+                        'NeutralizeCloseAll', true);
+                    r = mps.runScript(app.SourceFile, tempScript, runDir);
+                    try
+                        if ~isfile(keepScript) && ...
+                                ~strcmpi(tempScript, keepScript)
+                            copyfile(tempScript, keepScript);
+                        end
+                        if isfile(keepScript)
+                            r.scriptPath = keepScript;
+                        end
+                    catch
+                    end
+                    app.removeTempScript(tempScript, keepScript);
+                    app.handleRunFigures(r);
+
+                    results(end+1) = struct( ...
+                        'label', scenarios(k).label, ...
+                        'runDir', runDir, 'ok', r.ok, ...
+                        'error', r.error, 'figures', {r.figures}, ...
+                        'elapsed', r.elapsedSeconds, ...
+                        'workspaceData', {r.workspaceData}); %#ok<AGROW>
+                end
+
+                if ~isempty(d) && isvalid(d)
+                    d.Value = 0.97;
+                    d.Message = '生成叠加曲线和报告...';
+                    drawnow;
+                end
+
+                overlayPath = '';
+                if overlay
+                    overlayPath = app.makeSweepOverlay(sweepRoot, ...
+                        results, xName, yNames);
+                end
+
+                agg = app.aggregateSweepRun(sweepRoot, results, overlayPath);
+                app.LastRun = agg;
+                app.LastWorkspace = agg.workspaceData;
+                app.OutputDir = sweepRoot;
+                app.LastReport = mps.writeSweepReport(sweepRoot, ...
+                    app.SourceFile, names, values, scenarios, ...
+                    results, overlayPath);
+
+                app.refreshResults();
+                app.refreshWorkspace();
+                app.refreshPlotVariables();
+                if isempty(agg.log)
+                    app.LogArea.Value = {''};
+                else
+                    app.LogArea.Value = splitlines(agg.log);
+                end
+                app.ReportButton.Enable = 'on';
+                app.FolderButton.Enable = 'on';
+                app.CloseFiguresButton.Enable = 'on';
+
+                summary.ok = true;
+                summary.sweepRoot = sweepRoot;
+                summary.count = numel(results);
+                summary.report = app.LastReport;
+                summary.overlayPath = overlayPath;
+                app.StatusLabel.Text = sprintf( ...
+                    '批量扫描完成：%d 组，%d 张图。报告：%s', ...
+                    numel(results), numel(agg.figures), app.LastReport);
+            catch err
+                app.StatusLabel.Text = ['批量扫描失败：' err.message];
+                uialert(app.UIFigure, err.message, '批量扫描失败', ...
+                    'Icon', 'error');
+            end
+            clear cleanupObj;
+        end
+
+        function [sweepRoot, d, oldHV, oldVis, cleanupObj] = prepareSweep(app)
+            base = fileparts(app.SourceFile);
+            root = fullfile(base, 'parameter_studio_runs');
+            if ~isfolder(root)
+                mkdir(root);
+            end
+            stamp = datestr(now, 'yyyymmdd_HHMMSS');
+            sweepRoot = fullfile(root, [stamp '_sweep']);
+            n = 2;
+            while isfolder(sweepRoot)
+                sweepRoot = fullfile(root, sprintf('%s_sweep_%d', stamp, n));
+                n = n + 1;
+            end
+            mkdir(sweepRoot);
+
+            if strcmp(app.UIFigure.Visible, 'on')
+                d = uiprogressdlg(app.UIFigure, 'Title', '批量扫描', ...
+                    'Message', '准备...', 'Indeterminate', 'off', ...
+                    'Value', 0);
+            else
+                d = [];
+            end
+            oldHV = app.UIFigure.HandleVisibility;
+            app.UIFigure.HandleVisibility = 'off';
+            oldVis = get(groot, 'defaultFigureVisible');
+            set(groot, 'defaultFigureVisible', 'off');
+            cleanupObj = onCleanup(@() app.finishSweep(d, oldHV, oldVis)); %#ok<NASGU>
+        end
+
+        function finishSweep(app, d, oldHV, oldVis)
+            if ~isempty(d) && isvalid(d)
+                delete(d);
+            end
+            if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
+                app.UIFigure.HandleVisibility = oldHV;
+            end
+            set(groot, 'defaultFigureVisible', oldVis);
+            app.setBusy(false);
+        end
+
+        function [tempScript, keepScript] = makeTempScript(app, runDir)
+            keepScript = fullfile(runDir, 'run_script.m');
+            runDirSrc = fileparts(app.SourceFile);
+            tempScript = fullfile(runDirSrc, ...
+                sprintf('mps_sweep_%s.m', datestr(now, 'HHMMSSFFF')));
+            if isfile(tempScript)
+                tempScript = fullfile(runDirSrc, ...
+                    sprintf('mps_sweep_%s_%d.m', datestr(now, 'HHMMSSFFF'), ...
+                    randi(9999)));
+            end
+            % If the source folder is read-only, fall back to the run folder
+            % (relative paths may then fail, but the script still runs).
+            try
+                fid = fopen(tempScript, 'w');
+                if fid >= 0
+                    fclose(fid);
+                    delete(tempScript);
+                else
+                    tempScript = keepScript;
+                end
+            catch
+                tempScript = keepScript;
+            end
+        end
+
+        function removeTempScript(app, tempScript, keepScript)
+            if ~strcmpi(tempScript, keepScript) && isfile(tempScript)
+                try
+                    delete(tempScript);
+                catch
+                end
+            end
+        end
+
+        function handleRunFigures(app, r)
+            if app.KeepFiguresCheck.Value
+                for fk = 1:numel(r.figureHandles)
+                    if isvalid(r.figureHandles(fk))
+                        set(r.figureHandles(fk), 'Visible', 'on');
+                    end
+                end
+            else
+                for fk = 1:numel(r.figureHandles)
+                    if isvalid(r.figureHandles(fk))
+                        delete(r.figureHandles(fk));
+                    end
+                end
+                r.figureHandles = gobjects(0);
+            end
+        end
+
+        function agg = aggregateSweepRun(app, sweepRoot, results, overlayPath)
+            agg = struct();
+            agg.ok = true;
+            agg.error = '';
+            agg.figures = struct('path', {}, 'title', {}, 'figFile', {});
+            agg.workspace = struct('name', {}, 'class', {}, 'size', {}, ...
+                'min', {}, 'max', {}, 'preview', {});
+            agg.workspaceData = struct();
+            agg.log = '';
+            agg.outDir = sweepRoot;
+            agg.scriptPath = '';
+            agg.sourceFile = app.SourceFile;
+            agg.matFile = '';
+            agg.figureHandles = gobjects(0);
+            agg.elapsedSeconds = 0;
+
+            if ~isempty(overlayPath)
+                agg.figures(end+1) = struct('path', overlayPath, ...
+                    'title', '叠加曲线', 'figFile', '');
+            end
+            for k = 1:numel(results)
+                agg.elapsedSeconds = agg.elapsedSeconds + results(k).elapsed;
+                for j = 1:numel(results(k).figures)
+                    f = results(k).figures(j);
+                    agg.figures(end+1) = struct('path', f.path, ...
+                        'title', sprintf('%02d · %s · %s', k, ...
+                        results(k).label, f.title), 'figFile', f.figFile); %#ok<AGROW>
+                end
+                if ~isempty(results(k).error)
+                    agg.log = [agg.log, sprintf('--- run %02d (%s) ---\n%s\n', ...
+                        k, results(k).label, results(k).error)];
+                end
+            end
+            if ~isempty(results)
+                agg.workspaceData = results(end).workspaceData;
+                agg.workspace = mps.summarizeWorkspace(agg.workspaceData);
+            end
+        end
+
+        function overlayPath = makeSweepOverlay(app, sweepRoot, results, xName, yNames)
+            overlayPath = '';
+            if isempty(xName) || strcmp(xName, '(无)') || isempty(yNames)
+                return;
+            end
+            if ischar(yNames)
+                yNames = {yNames};
+            end
+            fig = figure('Visible', 'off', 'Color', 'w');
+            half = onCleanup(@() delete(fig)); %#ok<NASGU>
+            hold on;
+            grid on;
+            plotted = 0;
+            for k = 1:numel(results)
+                ws = results(k).workspaceData;
+                if ~isstruct(ws) || ~isfield(ws, xName)
+                    continue;
+                end
+                x = ws.(xName);
+                for j = 1:numel(yNames)
+                    if ~isfield(ws, yNames{j})
+                        continue;
+                    end
+                    y = ws.(yNames{j});
+                    if numel(x) ~= numel(y)
+                        continue;
+                    end
+                    plot(x, y, 'LineWidth', 1.2);
+                    plotted = plotted + 1;
+                end
+            end
+            if plotted == 0
+                return;
+            end
+            xlabel(xName, 'Interpreter', 'none');
+            ylabel('值');
+            title('批量扫描叠加曲线');
+            overlayPath = fullfile(sweepRoot, 'overlay.png');
+            try
+                exportgraphics(fig, overlayPath, 'Resolution', 150, ...
+                    'BackgroundColor', 'white');
+            catch
+                overlayPath = '';
+            end
+            clear half;
+        end
+
         function onCompareRuns(app)
             if isempty(app.PreviousOutDir) || ~isfolder(app.PreviousOutDir)
                 uialert(app.UIFigure, ...
@@ -1720,6 +2075,7 @@ classdef App < handle
                 app.ClearAnnotationButton, app.LockButton, ...
                 app.CompareButton, app.PresetSaveButton, ...
                 app.PresetLoadButton, app.PresetDeleteButton, ...
+                app.SweepButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -1746,8 +2102,10 @@ classdef App < handle
                     app.PresetSaveButton.Enable = 'off';
                     app.PresetLoadButton.Enable = 'off';
                     app.PresetDeleteButton.Enable = 'off';
+                    app.SweepButton.Enable = 'off';
                 elseif app.IsFunctionFile
                     app.RunButton.Enable = 'off';
+                    app.SweepButton.Enable = 'off';
                 end
                 if ~isempty(app.SourceFile)
                     app.PresetSaveButton.Enable = 'on';
@@ -1757,6 +2115,9 @@ classdef App < handle
                     else
                         app.PresetLoadButton.Enable = 'on';
                         app.PresetDeleteButton.Enable = 'on';
+                    end
+                    if ~app.IsFunctionFile
+                        app.SweepButton.Enable = 'on';
                     end
                 end
                 if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir) && ...
