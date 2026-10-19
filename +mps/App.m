@@ -24,7 +24,7 @@ classdef App < handle
         LogArea
         OpenButton, RescanButton, RunButton, SaveButton, ReportButton
         FolderButton, ExportButton, CloseFiguresButton
-        SelectAllButton, ResetButton, PlotButton, SavePlotButton
+        SelectAllButton, ResetButton, PlotButton, SavePlotButton, ExportCsvButton
         OpenReportInline
         SourceLines = {}
         VisibleIdx = []
@@ -120,6 +120,7 @@ classdef App < handle
             app.CloseFiguresButton.Enable = 'off';
             app.PlotButton.Enable = 'off';
             app.SavePlotButton.Enable = 'off';
+            app.ExportCsvButton.Enable = 'off';
 
             app.refreshTable();
             nUse = sum([p.use]);
@@ -178,6 +179,11 @@ classdef App < handle
         function saveCustomPlot(app)
             %SAVECUSTOMPLOT Save the current 绘图 tab figure and update the report.
             app.onSavePlot();
+        end
+
+        function exportCurveCsv(app)
+            %EXPORTCURVECSV Write current X/Y selection to curve_data.csv.
+            app.onExportCurve();
         end
     end
 
@@ -333,22 +339,22 @@ classdef App < handle
                 'ColumnEditable', false, 'RowName', []);
 
             t3 = uitab(tg, 'Title', '绘图');
-            pg = uigridlayout(t3, [5 2]);
+            pg = uigridlayout(t3, [5 3]);
             pg.RowHeight = {30, 82, 32, 22, '1x'};
-            pg.ColumnWidth = {72, '1x'};
+            pg.ColumnWidth = {72, '1x', '1x'};
             pg.Padding = [8 8 8 8];
             pg.RowSpacing = 6;
 
             uilabel(pg, 'Text', 'X 轴');
             app.XDrop = uidropdown(pg, 'Items', {'(无)'}, 'Value', '(无)');
             app.XDrop.Layout.Row = 1;
-            app.XDrop.Layout.Column = 2;
+            app.XDrop.Layout.Column = [2 3];
 
             uilabel(pg, 'Text', 'Y 轴（可多选）');
             app.YList = uilistbox(pg, 'Items', {'(无)'}, 'Value', {'(无)'}, ...
                 'Multiselect', 'on');
             app.YList.Layout.Row = 2;
-            app.YList.Layout.Column = 2;
+            app.YList.Layout.Column = [2 3];
 
             app.PlotButton = uibutton(pg, 'Text', '绘制', ...
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onPlot());
@@ -360,14 +366,19 @@ classdef App < handle
             app.SavePlotButton.Layout.Row = 3;
             app.SavePlotButton.Layout.Column = 2;
 
+            app.ExportCsvButton = uibutton(pg, 'Text', '导出曲线 CSV', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onExportCurve());
+            app.ExportCsvButton.Layout.Row = 3;
+            app.ExportCsvButton.Layout.Column = 3;
+
             app.PlotStatus = uilabel(pg, 'Text', '运行脚本后，可选择工作区变量绘图。', ...
                 'FontColor', [0.4 0.4 0.4]);
             app.PlotStatus.Layout.Row = 4;
-            app.PlotStatus.Layout.Column = [1 2];
+            app.PlotStatus.Layout.Column = [1 3];
 
             app.UIAxes = uiaxes(pg);
             app.UIAxes.Layout.Row = 5;
-            app.UIAxes.Layout.Column = [1 2];
+            app.UIAxes.Layout.Column = [1 3];
             app.UIAxes.XGrid = 'on';
             app.UIAxes.YGrid = 'on';
             app.UIAxes.Box = 'on';
@@ -833,6 +844,7 @@ classdef App < handle
                 app.YList.Value = {'(无)'};
                 app.PlotButton.Enable = 'off';
                 app.SavePlotButton.Enable = 'off';
+                app.ExportCsvButton.Enable = 'off';
                 app.PlotStatus.Text = '没有可绘制的数值向量。';
                 return;
             end
@@ -850,6 +862,7 @@ classdef App < handle
             app.YList.Value = ys(1:min(2, numel(ys)));
             app.PlotButton.Enable = 'on';
             app.SavePlotButton.Enable = 'on';
+            app.ExportCsvButton.Enable = 'on';
             txt = strjoin(names, ', ');
             if numel(txt) > 100
                 txt = [txt(1:97), '...'];
@@ -940,6 +953,64 @@ classdef App < handle
                 app.Params, app.LastRun);
             app.ReportButton.Enable = 'on';
             app.StatusLabel.Text = '自定义图已保存，HTML 报告已更新。';
+        end
+
+        function onExportCurve(app)
+            %ONEXPORTCURVE Write X/Y curve data to curve_data.csv.
+            if isempty(app.OutputDir) || ~isfolder(app.OutputDir)
+                uialert(app.UIFigure, '请先运行一次脚本。', '没有输出目录', ...
+                    'Icon', 'warning');
+                return;
+            end
+            if ~isstruct(app.LastWorkspace) || isempty(fieldnames(app.LastWorkspace))
+                uialert(app.UIFigure, '工作区里没有可导出的变量。', ...
+                    '没有数据', 'Icon', 'warning');
+                return;
+            end
+            xName = app.XDrop.Value;
+            if isempty(xName) || strcmp(xName, '(无)')
+                return;
+            end
+            yNames = app.YList.Value;
+            if ischar(yNames)
+                yNames = {yNames};
+            end
+            if isempty(yNames) || (numel(yNames) == 1 && strcmp(yNames{1}, '(无)'))
+                return;
+            end
+            x = app.LastWorkspace.(xName);
+            cols = {x(:)};
+            names = {matlab.lang.makeValidName(xName)};
+            for k = 1:numel(yNames)
+                if ~isfield(app.LastWorkspace, yNames{k})
+                    continue;
+                end
+                y = app.LastWorkspace.(yNames{k});
+                if numel(y) ~= numel(x)
+                    continue;
+                end
+                cols{end+1} = y(:); %#ok<AGROW>
+                names{end+1} = matlab.lang.makeValidName(yNames{k}); %#ok<AGROW>
+            end
+            if numel(cols) < 2
+                uialert(app.UIFigure, 'X/Y 变量长度不一致，无法导出。', ...
+                    '导出失败', 'Icon', 'warning');
+                return;
+            end
+            names = matlab.lang.makeUniqueStrings(names);
+            data = [cols{:}];
+            csvPath = fullfile(app.OutputDir, 'curve_data.csv');
+            try
+                T = array2table(data, 'VariableNames', names);
+                writetable(T, csvPath, 'Encoding', 'UTF-8');
+            catch err
+                uialert(app.UIFigure, err.message, '导出失败', 'Icon', 'error');
+                return;
+            end
+            app.StatusLabel.Text = sprintf('曲线数据已导出：%s', csvPath);
+            uialert(app.UIFigure, sprintf('已导出 %d 行 × %d 列：\n%s', ...
+                size(data, 1), size(data, 2), csvPath), ...
+                '导出成功', 'Icon', 'info');
         end
 
         % -----------------------------------------------------------------
@@ -1082,7 +1153,8 @@ classdef App < handle
                 app.SaveButton, app.ReportButton, app.FolderButton, ...
                 app.ExportButton, app.CloseFiguresButton, ...
                 app.SelectAllButton, app.ResetButton, ...
-                app.PlotButton, app.SavePlotButton, app.OpenReportInline];
+                app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
+                app.OpenReportInline];
             for k = 1:numel(btns)
                 if isvalid(btns(k))
                     if b
@@ -1114,6 +1186,7 @@ classdef App < handle
                 if ~isstruct(app.LastWorkspace) || isempty(fieldnames(app.LastWorkspace))
                     app.PlotButton.Enable = 'off';
                     app.SavePlotButton.Enable = 'off';
+                    app.ExportCsvButton.Enable = 'off';
                 end
             end
             drawnow;
