@@ -12,6 +12,7 @@ classdef App < handle
         LastWorkspace = struct()
         LastReport = ''
         OutputDir = ''
+        SourceStamp = struct()
     end
 
     properties (Access = private)
@@ -30,6 +31,7 @@ classdef App < handle
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
         PresetDeleteButton, SweepButton, BulkButton
+        UndoButton, RedoButton
         SourceLines = {}
         VisibleIdx = []
         SelectedParams = []
@@ -41,6 +43,11 @@ classdef App < handle
         Presets = struct([])
         PresetsFile = ''
         Busy = false
+        UndoStack = {}
+        RedoStack = {}
+        MaxUndo = 50
+        RestoringState = false
+        SessionDirty = false
     end
 
     methods
@@ -60,13 +67,34 @@ classdef App < handle
         end
 
         function delete(app)
+            try
+                if app.SessionDirty
+                    app.saveSession();
+                end
+            catch
+            end
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                 delete(app.UIFigure);
             end
         end
 
-        function loadFile(app, filePath)
+        function loadFile(app, filePath, varargin)
             %LOADFILE Scan a .m file and populate the parameter table.
+            %
+            %   loadFile(file) restores <file>_session.json when available.
+            %   loadFile(file, 'RestoreSession', false) starts fresh.
+            restoreSession = true;
+            for k = 1:2:numel(varargin)
+                if k + 1 > numel(varargin), break; end
+                if strcmpi(char(varargin{k}), 'RestoreSession')
+                    value = varargin{k+1};
+                    if ischar(value) || isstring(value)
+                        restoreSession = ~strcmpi(char(value), 'off');
+                    else
+                        restoreSession = logical(value);
+                    end
+                end
+            end
             filePath = char(filePath);
             if ~isfile(filePath)
                 uialert(app.UIFigure, sprintf('文件不存在：\n%s', filePath), ...
@@ -152,6 +180,32 @@ classdef App < handle
                 app.AnnotationFile = annFile;
                 annMatched = annStats.matched;
             end
+
+            app.SourceStamp = mps.sourceStamp(filePath);
+            app.UndoStack = {};
+            app.RedoStack = {};
+            app.SessionDirty = false;
+            sessionNote = '';
+            if restoreSession
+                session = mps.readSession(filePath);
+                if ~isempty(session)
+                    if mps.sameSourceStamp(session.stamp, app.SourceStamp)
+                        preset = struct('name', '上次会话', ...
+                            'values', session.values);
+                        [app.Params, sessStats] = ...
+                            mps.applyPreset(app.Params, preset);
+                        sessionNote = sprintf( ...
+                            '；已恢复上次未运行的修改 %d 项', ...
+                            sessStats.matched);
+                    else
+                        try
+                            delete(mps.sessionPath(filePath));
+                        catch
+                        end
+                        sessionNote = '；源文件已变化，未恢复上次修改';
+                    end
+                end
+            end
             app.loadPresetsFromDisk();
             app.LastRun = struct();
             app.LastWorkspace = struct();
@@ -206,7 +260,8 @@ classdef App < handle
             app.ExportCsvButton.Enable = 'off';
 
             app.refreshTable();
-            nUse = sum([p.use]);
+            app.updateUndoButtons();
+            nUse = sum([app.Params.use]);
             if ~isempty(app.LastAnnotations)
                 annNote = sprintf('；已应用注释 %d 条（%s）', annMatched, app.AnnotationFile);
             else
@@ -214,12 +269,12 @@ classdef App < handle
             end
             if app.IsFunctionFile
                 app.StatusLabel.Text = sprintf( ...
-                    '已载入函数文件：识别 %d 个数字（%d 个推荐），可保存调参后的函数，但不能直接运行%s。', ...
-                    numel(p), nUse, annNote);
+                    '已载入函数文件：识别 %d 个数字（%d 个推荐），可保存调参后的函数，但不能直接运行%s%s。', ...
+                    numel(app.Params), nUse, annNote, sessionNote);
             else
                 app.StatusLabel.Text = sprintf( ...
-                    '已载入：识别 %d 个数字，其中 %d 个推荐参数%s。下一步：改“新值”后点“运行”。', ...
-                    numel(p), nUse, annNote);
+                    '已载入：识别 %d 个数字，其中 %d 个推荐参数%s%s。下一步：改“新值”后点“运行”。', ...
+                    numel(app.Params), nUse, annNote, sessionNote);
             end
             drawnow;
         end
@@ -230,18 +285,44 @@ classdef App < handle
                 value = num2str(value);
             end
             value = char(value);
-            for k = 1:numel(app.Params)
-                if strcmp(app.Params(k).name, name)
-                    if app.Params(k).locked
-                        continue;   % locked parameters stay pinned
-                    end
-                    app.Params(k).newValue = value;
-                    app.Params(k).isChanged = ~strcmp(strtrim(app.Params(k).value), ...
-                        strtrim(value));
-                    app.Params(k).use = true;
+            matches = find(strcmp({app.Params.name}, name));
+            if isempty(matches)
+                return;
+            end
+            app.pushUndo();
+            for k = matches
+                if app.Params(k).locked
+                    continue;   % locked parameters stay pinned
                 end
+                app.Params(k).newValue = value;
+                app.Params(k).isChanged = ~strcmp(strtrim(app.Params(k).value), ...
+                    strtrim(value));
+                app.Params(k).use = true;
             end
             app.refreshTable();
+        end
+
+        function undoLastEdit(app)
+            %UNDOLASTEDIT Restore the table state before the last change.
+            app.doUndo();
+        end
+
+        function redoLastEdit(app)
+            %REDOLASTEDIT Reapply the last undone change.
+            app.doRedo();
+        end
+
+        function saveSession(app)
+            %SAVESESSION Persist unsaved table edits next to the script.
+            if isempty(app.SourceFile) || isempty(app.Params)
+                return;
+            end
+            try
+                mps.writeSession(app.SourceFile, app.Params, ...
+                    app.SourceStamp);
+                app.SessionDirty = false;
+            catch
+            end
         end
 
         function runCurrent(app)
@@ -287,6 +368,7 @@ classdef App < handle
         function stats = importAnnotations(app, jsonPath)
             %IMPORTANNOTATIONS Read and apply an annotation JSON.
             anns = mps.readAnnotations(jsonPath);
+            app.pushUndo();
             [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
             app.LastAnnotations = anns;
             app.AnnotationFile = jsonPath;
@@ -300,6 +382,7 @@ classdef App < handle
 
         function toggleLock(app, name)
             %TOGGLELOCK Lock or unlock a parameter by name.
+            app.pushUndo();
             for k = 1:numel(app.Params)
                 if strcmp(app.Params(k).name, name)
                     app.Params(k).locked = ~app.Params(k).locked;
@@ -335,6 +418,7 @@ classdef App < handle
             if isempty(idx)
                 error('mps:App:presetNotFound', '找不到参数集：%s', name);
             end
+            app.pushUndo();
             [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
             app.refreshTable();
         end
@@ -569,10 +653,26 @@ classdef App < handle
                 app.Table.Multiselect = 'on';   % R2023b+
             catch
             end
+            try
+                app.Table.Tooltip = ...
+                    '双击“参数”或“行”列，在 MATLAB 编辑器中打开对应行';
+                app.Table.DoubleClickedFcn = @(s, e) app.onOpenInEditor(e);
+            catch
+            end
 
-            app.SourcePreview = uitextarea(lg, 'Editable', 'off', ...
+            sourceGrid = uigridlayout(lg, [1 3]);
+            sourceGrid.Layout.Row = 5;
+            sourceGrid.ColumnWidth = {'1x', 64, 64};
+            sourceGrid.Padding = [0 0 0 0];
+            sourceGrid.ColumnSpacing = 6;
+            app.SourcePreview = uitextarea(sourceGrid, 'Editable', 'off', ...
                 'FontName', 'Consolas', 'FontSize', 11, 'Value', {''});
-            app.SourcePreview.Layout.Row = 5;
+            app.UndoButton = uibutton(sourceGrid, 'Text', '撤销', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.undoLastEdit());
+            app.UndoButton.Layout.Column = 2;
+            app.RedoButton = uibutton(sourceGrid, 'Text', '重做', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.redoLastEdit());
+            app.RedoButton.Layout.Column = 3;
 
             tg = uitabgroup(main);
             tg.Layout.Column = 2;
@@ -707,6 +807,8 @@ classdef App < handle
                 '清除当前表格里的注释（注释文件不会被删除）');
             set(app.LockButton, 'Tooltip', ...
                 '把选中行的参数钉死在原值，运行和保存都不会改它');
+            set(app.UndoButton, 'Tooltip', '撤销上一次参数修改（Ctrl+Z）');
+            set(app.RedoButton, 'Tooltip', '重做刚撤销的修改（Ctrl+Y）');
             set(app.KeepFiguresCheck, 'Tooltip', ...
                 '勾选：运行结束后保留图窗；不勾选：图窗自动关闭（推荐）');
             set(app.PresetDrop, 'Tooltip', '已保存的参数方案');
@@ -747,12 +849,21 @@ classdef App < handle
                 end
             end
             hasCtrl = any(strcmpi(mods, 'control'));
+            hasShift = any(strcmpi(mods, 'shift'));
             if strcmp(key, 'f5') || (strcmp(key, 'return') && hasCtrl)
                 app.onRun();
             elseif strcmp(key, 'o') && hasCtrl
                 app.onOpen();
             elseif strcmp(key, 'b') && hasCtrl
                 app.onBulkEdit();
+            elseif strcmp(key, 'z') && hasCtrl
+                if hasShift
+                    app.redoLastEdit();
+                else
+                    app.undoLastEdit();
+                end
+            elseif strcmp(key, 'y') && hasCtrl
+                app.redoLastEdit();
             end
         end
 
@@ -768,6 +879,117 @@ classdef App < handle
                 return;
             end
             app.loadFile(fullfile(path, file));
+        end
+
+        function onOpenInEditor(app, varargin)
+            %ONOPENINEDITOR Jump to the selected parameter's source line.
+            if ~isempty(varargin) && isstruct(varargin{1}) && ...
+                    isfield(varargin{1}, 'Indices') && ...
+                    ~isempty(varargin{1}.Indices)
+                % Only the read-only 参数/行 columns open the editor; a
+                % double-click on 新值 must keep working as cell editing.
+                indices = varargin{1}.Indices;
+                if size(indices, 2) < 2
+                    return;
+                end
+                col = indices(1, 2);
+                if ~ismember(col, [3 6])
+                    return;
+                end
+            end
+            if isempty(app.SourceFile) || isempty(app.SelectedParams)
+                uialert(app.UIFigure, '请先在参数表里选中一行。', ...
+                    '没有选中参数', 'Icon', 'warning');
+                return;
+            end
+            idx = app.SelectedParams(end);
+            lineNo = app.Params(idx).line;
+            try
+                matlab.desktop.editor.openAndGoToLine( ...
+                    app.SourceFile, max(1, lineNo));
+                app.StatusLabel.Text = sprintf( ...
+                    '已在 MATLAB 编辑器中打开：第 %d 行。', lineNo);
+            catch
+                try
+                    edit(app.SourceFile);
+                    app.StatusLabel.Text = sprintf( ...
+                        '已打开源文件（未能定位到第 %d 行）。', lineNo);
+                catch err
+                    uialert(app.UIFigure, err.message, '打开失败', ...
+                        'Icon', 'error');
+                end
+            end
+        end
+
+        function changed = sourceChanged(app)
+            %SOURCECHANGED True when the file changed after it was scanned.
+            changed = false;
+            if isempty(app.SourceFile) || isempty(fieldnames(app.SourceStamp))
+                return;
+            end
+            try
+                current = mps.sourceStamp(app.SourceFile);
+                changed = ~mps.sameSourceStamp(app.SourceStamp, current);
+            catch
+                changed = true;
+            end
+        end
+
+        function ok = ensureSourceCurrent(app, actionLabel)
+            %ENSURESOURCECURRENT Ask before using stale line/column positions.
+            ok = true;
+            if ~app.sourceChanged()
+                return;
+            end
+            if ~strcmp(app.UIFigure.Visible, 'on')
+                app.StatusLabel.Text = sprintf( ...
+                    '源文件已被外部修改，无法%s；请先重新扫描。', actionLabel);
+                ok = false;
+                return;
+            end
+            choice = uiconfirm(app.UIFigure, sprintf( ...
+                ['源文件在扫描后被外部修改了。\n\n' ...
+                 '继续%s可能把值写到旧的行号位置。建议先重新扫描并保留修改。'], ...
+                actionLabel), '源文件已变化', ...
+                'Options', {'重新扫描并保留修改', '仍然继续', '取消'}, ...
+                'DefaultOption', 1, 'CancelOption', 3);
+            switch choice
+                case '重新扫描并保留修改'
+                    app.rescanKeepingEdits();
+                case '仍然继续'
+                    % The user explicitly accepts the stale positions.
+                otherwise
+                    ok = false;
+            end
+        end
+
+        function rescanKeepingEdits(app)
+            %RESCANKEEPINGEDITS Re-scan and map old edits to the new table.
+            if isempty(app.SourceFile)
+                return;
+            end
+            oldParams = app.Params;
+            oldAnnotations = app.LastAnnotations;
+            oldAnnotationFile = app.AnnotationFile;
+            try
+                delete(mps.sessionPath(app.SourceFile));
+            catch
+            end
+            app.loadFile(app.SourceFile, 'RestoreSession', false);
+            preset = struct('name', '重扫前修改', ...
+                'values', mps.paramsToValues(oldParams));
+            [app.Params, stats] = mps.applyPreset(app.Params, preset);
+            if ~isempty(oldAnnotations)
+                [app.Params, ~] = mps.applyAnnotations( ...
+                    app.Params, oldAnnotations);
+                app.LastAnnotations = oldAnnotations;
+                app.AnnotationFile = oldAnnotationFile;
+            end
+            app.SessionDirty = true;
+            app.refreshTable();
+            app.StatusLabel.Text = sprintf( ...
+                '已重新扫描并保留修改：匹配 %d，重名跳过 %d，未匹配 %d。', ...
+                stats.matched, stats.ambiguous, stats.unmatched);
         end
 
         function onHelp(app)
@@ -793,6 +1015,10 @@ classdef App < handle
                 '', ...
                 '常用进阶（不清楚可以先不用）：', ...
                 '· 批量改参数：Ctrl/Shift 多选行 → 点“批量修改...”或按 Ctrl+B。', ...
+                '· 改错了：Ctrl+Z 撤销，Ctrl+Y 重做（表格下方也有按钮）。', ...
+                '· 双击参数行：在 MATLAB 编辑器中打开对应源码位置。', ...
+                '· 关闭应用后重新打开同一脚本，会恢复上次未运行的修改。', ...
+                '· 保存调参 .m 前会先显示 diff，确认后才写文件。', ...
                 '· 看不懂参数含义：生成注释 JSON → 给 AI 填写 → 导入注释。', ...
                 '· 想存几套方案：在“参数集”输入名字 → 保存为参数集。', ...
                 '· 想对比两次：点“运行历史”，任选两次设为 A/B 后对比。', ...
@@ -821,7 +1047,11 @@ classdef App < handle
                     return;
                 end
             end
-            app.loadFile(app.SourceFile);
+            try
+                delete(mps.sessionPath(app.SourceFile));
+            catch
+            end
+            app.loadFile(app.SourceFile, 'RestoreSession', false);
         end
 
         function onRun(app)
@@ -837,6 +1067,9 @@ classdef App < handle
                 return;
             end
             if app.Busy
+                return;
+            end
+            if ~app.ensureSourceCurrent('运行')
                 return;
             end
 
@@ -1021,6 +1254,86 @@ classdef App < handle
         end
 
         % -----------------------------------------------------------------
+        function pushUndo(app)
+            %PUSHUNDO Snapshot the table before a user-visible change.
+            if app.RestoringState
+                return;
+            end
+            app.UndoStack{end+1} = app.snapshotState();
+            if numel(app.UndoStack) > app.MaxUndo
+                app.UndoStack(1) = [];
+            end
+            app.RedoStack = {};
+            app.SessionDirty = true;
+            app.updateUndoButtons();
+        end
+
+        function state = snapshotState(app)
+            state = {app.Params, app.SelectedParams, ...
+                app.LastAnnotations, app.AnnotationFile};
+        end
+
+        function restoreState(app, state)
+            app.Params = state{1};
+            app.SelectedParams = state{2};
+            app.LastAnnotations = state{3};
+            app.AnnotationFile = state{4};
+        end
+
+        function doUndo(app)
+            if isempty(app.UndoStack)
+                return;
+            end
+            app.RedoStack{end+1} = app.snapshotState();
+            state = app.UndoStack{end};
+            app.UndoStack(end) = [];
+            app.RestoringState = true;
+            app.restoreState(state);
+            app.RestoringState = false;
+            app.SessionDirty = true;
+            app.refreshTable();
+            app.StatusLabel.Text = '已撤销上一次修改。';
+            app.updateUndoButtons();
+        end
+
+        function doRedo(app)
+            if isempty(app.RedoStack)
+                return;
+            end
+            app.UndoStack{end+1} = app.snapshotState();
+            state = app.RedoStack{end};
+            app.RedoStack(end) = [];
+            app.RestoringState = true;
+            app.restoreState(state);
+            app.RestoringState = false;
+            app.SessionDirty = true;
+            app.refreshTable();
+            app.StatusLabel.Text = '已重做上一次修改。';
+            app.updateUndoButtons();
+        end
+
+        function updateUndoButtons(app)
+            if isempty(app.UndoButton) || ~isvalid(app.UndoButton)
+                return;
+            end
+            if app.Busy
+                app.UndoButton.Enable = 'off';
+                app.RedoButton.Enable = 'off';
+                return;
+            end
+            if isempty(app.UndoStack)
+                app.UndoButton.Enable = 'off';
+            else
+                app.UndoButton.Enable = 'on';
+            end
+            if isempty(app.RedoStack)
+                app.RedoButton.Enable = 'off';
+            else
+                app.RedoButton.Enable = 'on';
+            end
+        end
+
+        % -----------------------------------------------------------------
         function refreshTable(app)
             if isempty(app.Params)
                 app.Table.Data = cell(0, 9);
@@ -1029,6 +1342,7 @@ classdef App < handle
                 app.SelectedVisibleRows = [];
                 app.CountLabel.Text = '0 / 0';
                 app.updateAnnotationStatus();
+                app.updateUndoButtons();
                 return;
             end
 
@@ -1101,6 +1415,10 @@ classdef App < handle
                     app.SelectAllButton.Text = '全选推荐';
                 end
             end
+            app.updateUndoButtons();
+            if app.SessionDirty
+                app.saveSession();
+            end
         end
 
         function onCellEdit(app, ~, event)
@@ -1114,8 +1432,10 @@ classdef App < handle
             end
             idx = app.VisibleIdx(row);
             if col == 1
+                app.pushUndo();
                 app.Params(idx).use = logical(event.NewData);
             elseif col == 2
+                app.pushUndo();
                 lock = logical(event.NewData);
                 app.Params(idx).locked = lock;
                 if lock
@@ -1143,6 +1463,7 @@ classdef App < handle
                     app.refreshTable();
                     return;
                 end
+                app.pushUndo();
                 app.Params(idx).newValue = newVal;
                 app.Params(idx).isChanged = ~strcmp( ...
                     strtrim(app.Params(idx).value), newVal);
@@ -1238,6 +1559,7 @@ classdef App < handle
             if ~any(rec)
                 return;
             end
+            app.pushUndo();
             if all([app.Params(rec).use])
                 for k = find(rec)
                     app.Params(k).use = false;
@@ -1251,6 +1573,7 @@ classdef App < handle
         end
 
         function onReset(app)
+            app.pushUndo();
             for k = 1:numel(app.Params)
                 app.Params(k).newValue = app.Params(k).value;
                 app.Params(k).isChanged = false;
@@ -1278,6 +1601,7 @@ classdef App < handle
                 return;   % cancelled
             end
 
+            app.pushUndo();
             try
                 if strcmp(result.op, 'paste')
                     [app.Params, stats] = mps.applyPastedValues( ...
@@ -1375,6 +1699,7 @@ classdef App < handle
                 uialert(app.UIFigure, err.message, '导入失败', 'Icon', 'error');
                 return;
             end
+            app.pushUndo();
             [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
             app.LastAnnotations = anns;
             app.AnnotationFile = target;
@@ -1394,6 +1719,7 @@ classdef App < handle
         end
 
         function onClearAnnotations(app)
+            app.pushUndo();
             for k = 1:numel(app.Params)
                 app.Params(k).description = '';
                 app.Params(k).unit = '';
@@ -1424,6 +1750,7 @@ classdef App < handle
                     '没有选中行', 'Icon', 'warning');
                 return;
             end
+            app.pushUndo();
             if all([app.Params(indices).locked])
                 for idx = indices
                     app.Params(idx).locked = false;
@@ -1537,6 +1864,7 @@ classdef App < handle
             if isempty(idx)
                 return;
             end
+            app.pushUndo();
             try
                 [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
             catch err
@@ -1981,6 +2309,7 @@ classdef App < handle
             end
 
             preset = struct('name', '历史运行', 'values', values);
+            app.pushUndo();
             try
                 [app.Params, stats] = mps.applyPreset(app.Params, preset);
             catch err
@@ -2258,6 +2587,9 @@ classdef App < handle
             if isempty(app.SourceFile)
                 return;
             end
+            if ~app.ensureSourceCurrent('保存')
+                return;
+            end
             [~, base] = fileparts(app.SourceFile);
             defaultName = fullfile(fileparts(app.SourceFile), [base '_tuned.m']);
             [file, path] = uiputfile({'*.m', 'MATLAB 脚本 (*.m)'}, ...
@@ -2296,12 +2628,32 @@ classdef App < handle
             end
 
             try
-                [~, applied] = mps.applyEdits(app.SourceFile, app.Params, ...
-                    target, 'Footer', footer);
+                original = fileread(app.SourceFile);
+                [outText, applied] = mps.applyEdits(app.SourceFile, ...
+                    app.Params, '', 'Footer', footer);
             catch err
                 uialert(app.UIFigure, err.message, '保存失败', 'Icon', 'error');
                 return;
             end
+
+            diffLines = mps.textDiff(original, outText);
+            dlg = mps.DiffDialog(sprintf('保存到：%s', target), diffLines);
+            uiwait(dlg.UIFigure);
+            confirmed = dlg.Result;
+            delete(dlg);
+            if ~confirmed
+                app.StatusLabel.Text = '已取消保存。';
+                return;
+            end
+
+            fid = fopen(target, 'w', 'n', 'UTF-8');
+            if fid < 0
+                uialert(app.UIFigure, '无法写入目标文件。', ...
+                    '保存失败', 'Icon', 'error');
+                return;
+            end
+            fprintf(fid, '%s', outText);
+            fclose(fid);
 
             [folder, outBase] = fileparts(target);
             jsonPath = fullfile(folder, [outBase '_params.json']);
@@ -2383,6 +2735,12 @@ classdef App < handle
         end
 
         function onClose(app)
+            try
+                if app.SessionDirty
+                    app.saveSession();
+                end
+            catch
+            end
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                 app.UIFigure.UserData = [];
                 delete(app.UIFigure);
@@ -2400,6 +2758,7 @@ classdef App < handle
                 app.CompareButton, app.PresetSaveButton, ...
                 app.PresetLoadButton, app.PresetDeleteButton, ...
                 app.SweepButton, app.BulkButton, ...
+                app.UndoButton, app.RedoButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -2465,6 +2824,7 @@ classdef App < handle
                     app.ExportCsvButton.Enable = 'off';
                 end
             end
+            app.updateUndoButtons();
             drawnow;
         end
     end
