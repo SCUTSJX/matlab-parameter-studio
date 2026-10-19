@@ -26,10 +26,14 @@ classdef App < handle
         FolderButton, ExportButton, CloseFiguresButton
         SelectAllButton, ResetButton, PlotButton, SavePlotButton, ExportCsvButton
         OpenReportInline
+        AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
+        ClearAnnotationButton
         SourceLines = {}
         VisibleIdx = []
         IsFunctionFile = false
         CustomPlotPath = ''
+        LastAnnotations = struct([])
+        AnnotationFile = ''
         Busy = false
     end
 
@@ -81,8 +85,41 @@ classdef App < handle
             end
             app.IsFunctionFile = ~isempty(regexp(firstCode, '^function\s', 'once'));
 
+            % Resolve annotations: keep them when re-scanning the same file,
+            % otherwise auto-load an <name>_annotations.json sidecar if it
+            % exists (the file written by "生成注释 JSON").
+            sameFile = strcmp(app.SourceFile, filePath);
+            anns = struct([]);
+            annFile = '';
+            annMatched = 0;
+            if sameFile && ~isempty(app.LastAnnotations)
+                anns = app.LastAnnotations;
+                annFile = app.AnnotationFile;
+            else
+                [folder, baseName] = fileparts(filePath);
+                sidecar = fullfile(folder, [baseName '_annotations.json']);
+                if isfile(sidecar)
+                    try
+                        candidate = mps.readAnnotations(sidecar);
+                        if hasAnyAnnotation(candidate)
+                            anns = candidate;
+                            annFile = sidecar;
+                        end
+                    catch
+                    end
+                end
+            end
+
             app.SourceFile = filePath;
             app.Params = p;
+            app.LastAnnotations = struct([]);
+            app.AnnotationFile = '';
+            if ~isempty(anns)
+                [app.Params, annStats] = mps.applyAnnotations(app.Params, anns);
+                app.LastAnnotations = anns;
+                app.AnnotationFile = annFile;
+                annMatched = annStats.matched;
+            end
             app.LastRun = struct();
             app.LastWorkspace = struct();
             app.LastReport = '';
@@ -115,6 +152,9 @@ classdef App < handle
             end
             app.SaveButton.Enable = 'on';
             app.ExportButton.Enable = 'on';
+            app.AnnotateTemplateButton.Enable = 'on';
+            app.ImportAnnotationButton.Enable = 'on';
+            app.ClearAnnotationButton.Enable = 'on';
             app.ReportButton.Enable = 'off';
             app.FolderButton.Enable = 'off';
             app.CloseFiguresButton.Enable = 'off';
@@ -124,13 +164,18 @@ classdef App < handle
 
             app.refreshTable();
             nUse = sum([p.use]);
+            if ~isempty(app.LastAnnotations)
+                annNote = sprintf('；已应用注释 %d 条（%s）', annMatched, app.AnnotationFile);
+            else
+                annNote = '';
+            end
             if app.IsFunctionFile
                 app.StatusLabel.Text = sprintf( ...
-                    '已载入函数文件：识别 %d 个数字（%d 个推荐）。可保存调参后的函数，但不能直接运行。', ...
-                    numel(p), nUse);
+                    '已载入函数文件：识别 %d 个数字（%d 个推荐），可保存调参后的函数，但不能直接运行%s。', ...
+                    numel(p), nUse, annNote);
             else
-                app.StatusLabel.Text = sprintf('已载入：识别 %d 个数字，其中 %d 个推荐参数。', ...
-                    numel(p), nUse);
+                app.StatusLabel.Text = sprintf('已载入：识别 %d 个数字，其中 %d 个推荐参数%s。', ...
+                    numel(p), nUse, annNote);
             end
             drawnow;
         end
@@ -184,6 +229,26 @@ classdef App < handle
         function exportCurveCsv(app)
             %EXPORTCURVECSV Write current X/Y selection to curve_data.csv.
             app.onExportCurve();
+        end
+
+        function path = exportAnnotationTemplate(app, jsonPath)
+            %EXPORTANNOTATIONTEMPLATE Write the annotation template JSON.
+            mps.writeAnnotationTemplate(app.SourceFile, app.Params, jsonPath);
+            path = jsonPath;
+        end
+
+        function stats = importAnnotations(app, jsonPath)
+            %IMPORTANNOTATIONS Read and apply an annotation JSON.
+            anns = mps.readAnnotations(jsonPath);
+            [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
+            app.LastAnnotations = anns;
+            app.AnnotationFile = jsonPath;
+            app.refreshTable();
+        end
+
+        function clearAnnotations(app)
+            %CLEARANNOTATIONS Remove all in-memory annotations.
+            app.onClearAnnotations();
         end
     end
 
@@ -256,8 +321,8 @@ classdef App < handle
 
             lp = uipanel(main, 'Title', '参数', 'FontWeight', 'bold');
             lp.Layout.Column = 1;
-            lg = uigridlayout(lp, [3 1]);
-            lg.RowHeight = {34, '1x', 96};
+            lg = uigridlayout(lp, [4 1]);
+            lg.RowHeight = {34, 30, '1x', 96};
             lg.Padding = [8 8 8 8];
             lg.RowSpacing = 6;
 
@@ -291,19 +356,44 @@ classdef App < handle
                 'ButtonPushedFcn', @(s, e) app.onReset());
             app.ResetButton.Layout.Column = 5;
 
+            ag = uigridlayout(lg, [1 4]);
+            ag.Layout.Row = 2;
+            ag.ColumnWidth = {130, '1x', 100, 100};
+            ag.Padding = [0 0 0 0];
+            ag.ColumnSpacing = 6;
+
+            app.AnnotateTemplateButton = uibutton(ag, ...
+                'Text', '生成注释 JSON', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onWriteAnnotationTemplate());
+            app.AnnotateTemplateButton.Layout.Column = 1;
+
+            app.AnnotationStatus = uilabel(ag, 'Text', '未导入注释', ...
+                'FontColor', [0.4 0.4 0.4]);
+            app.AnnotationStatus.Layout.Column = 2;
+
+            app.ImportAnnotationButton = uibutton(ag, ...
+                'Text', '导入注释', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onImportAnnotations());
+            app.ImportAnnotationButton.Layout.Column = 3;
+
+            app.ClearAnnotationButton = uibutton(ag, ...
+                'Text', '清空注释', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onClearAnnotations());
+            app.ClearAnnotationButton.Layout.Column = 4;
+
             app.Table = uitable(lg, ...
-                'ColumnName', {'使用', '参数', '当前值', '新值', '行', '类型', '说明'}, ...
-                'ColumnEditable', [true false false true false false false], ...
-                'ColumnFormat', {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char'}, ...
-                'ColumnWidth', {48, 205, 85, 85, 42, 85, '1x'}, ...
+                'ColumnName', {'使用', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
+                'ColumnEditable', [true false false true false false false false], ...
+                'ColumnFormat', {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char'}, ...
+                'ColumnWidth', {44, 180, 78, 78, 38, 76, 130, '1x'}, ...
                 'RowName', [], ...
                 'CellEditCallback', @(s, e) app.onCellEdit(s, e), ...
                 'CellSelectionCallback', @(s, e) app.onCellSelect(s, e));
-            app.Table.Layout.Row = 2;
+            app.Table.Layout.Row = 3;
 
             app.SourcePreview = uitextarea(lg, 'Editable', 'off', ...
                 'FontName', 'Consolas', 'FontSize', 11, 'Value', {''});
-            app.SourcePreview.Layout.Row = 3;
+            app.SourcePreview.Layout.Row = 4;
 
             tg = uitabgroup(main);
             tg.Layout.Column = 2;
@@ -601,9 +691,10 @@ classdef App < handle
         % -----------------------------------------------------------------
         function refreshTable(app)
             if isempty(app.Params)
-                app.Table.Data = cell(0, 7);
+                app.Table.Data = cell(0, 8);
                 app.VisibleIdx = [];
                 app.CountLabel.Text = '0 / 0';
+                app.updateAnnotationStatus();
                 return;
             end
 
@@ -627,8 +718,8 @@ classdef App < handle
                         keep = true;
                 end
                 if keep && ~isempty(q)
-                    hay = lower(sprintf('%s %s %s %d', ...
-                        p.name, p.note, p.context, p.line));
+                    hay = lower(sprintf('%s %s %s %s %s %d', ...
+                        p.name, p.description, p.unit, p.note, p.context, p.line));
                     keep = contains(hay, q);
                 end
                 if keep
@@ -637,7 +728,7 @@ classdef App < handle
             end
             app.VisibleIdx = idx;
 
-            data = cell(numel(idx), 7);
+            data = cell(numel(idx), 8);
             for j = 1:numel(idx)
                 p = app.Params(idx(j));
                 note = p.note;
@@ -654,10 +745,12 @@ classdef App < handle
                 data{j,5} = p.line;
                 data{j,6} = categoryLabel(p.category);
                 data{j,7} = note;
+                data{j,8} = annotationText(p);
             end
             app.Table.Data = data;
             app.CountLabel.Text = sprintf('%d / %d · 已修改 %d', ...
                 numel(idx), numel(app.Params), sum([app.Params.isChanged]));
+            app.updateAnnotationStatus();
 
             rec = [app.Params.score] >= 3;
             if any(rec)
@@ -729,6 +822,10 @@ classdef App < handle
                 preview{j - lo + 1} = sprintf('%s%4d | %s', ...
                     marker, j, app.SourceLines{j});
             end
+            ann = annotationText(app.Params(idx));
+            if ~isempty(ann)
+                preview = [{'注释：' ann}; {''}; preview];
+            end
             app.SourcePreview.Value = preview;
         end
 
@@ -759,6 +856,103 @@ classdef App < handle
             end
             app.refreshTable();
             app.StatusLabel.Text = '已把所有新值重置为当前值。';
+        end
+
+        % -----------------------------------------------------------------
+        function updateAnnotationStatus(app)
+            total = numel(app.Params);
+            n = 0;
+            for k = 1:total
+                if ~isempty(app.Params(k).description) || ...
+                        ~isempty(app.Params(k).unit)
+                    n = n + 1;
+                end
+            end
+            if n == 0
+                app.AnnotationStatus.Text = '未导入注释';
+                app.AnnotationStatus.FontColor = [0.4 0.4 0.4];
+            else
+                app.AnnotationStatus.Text = sprintf('已注释 %d / %d', n, total);
+                app.AnnotationStatus.FontColor = [0.05 0.45 0.15];
+            end
+        end
+
+        function onWriteAnnotationTemplate(app)
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            [~, base] = fileparts(app.SourceFile);
+            defaultName = fullfile(fileparts(app.SourceFile), ...
+                [base '_annotations.json']);
+            [file, path] = uiputfile({'*.json', 'JSON 文件 (*.json)'}, ...
+                '生成注释模板 JSON', defaultName);
+            if isequal(file, 0)
+                return;
+            end
+            target = fullfile(path, file);
+            try
+                mps.writeAnnotationTemplate(app.SourceFile, ...
+                    app.Params, target);
+            catch err
+                uialert(app.UIFigure, err.message, '生成失败', 'Icon', 'error');
+                return;
+            end
+            app.StatusLabel.Text = sprintf('注释模板已生成：%s', target);
+            uialert(app.UIFigure, sprintf( ...
+                ['注释模板已生成：\n%s\n\n' ...
+                 '使用方法：把该 JSON 发给 AI（或自己填写），让 AI 为每个参数的 ' ...
+                 'description（含义）和 unit（单位）赋值，然后回到本应用点“导入注释”。\n\n' ...
+                 '重新打开同一个 .m 文件时，如果旁边存在 <文件名>_annotations.json，' ...
+                 '会自动载入。'], target), '生成成功', 'Icon', 'info');
+        end
+
+        function onImportAnnotations(app)
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            [file, path] = uigetfile({'*.json', 'JSON 文件 (*.json)'}, ...
+                '导入注释 JSON', fileparts(app.SourceFile));
+            if isequal(file, 0)
+                return;
+            end
+            target = fullfile(path, file);
+            try
+                anns = mps.readAnnotations(target);
+            catch err
+                uialert(app.UIFigure, err.message, '导入失败', 'Icon', 'error');
+                return;
+            end
+            [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
+            app.LastAnnotations = anns;
+            app.AnnotationFile = target;
+            app.refreshTable();
+            msg = sprintf(['已读取 %d 条注释：\n' ...
+                '  匹配到参数：%d\n  重名无法匹配：%d\n  未匹配：%d\n  空注释跳过：%d'], ...
+                numel(anns), stats.matched, stats.ambiguous, ...
+                stats.unmatched, stats.skipped);
+            app.StatusLabel.Text = sprintf('已导入注释：匹配 %d / %d 条（%s）', ...
+                stats.matched, numel(anns), target);
+            if stats.matched == 0 && stats.skipped < numel(anns)
+                uialert(app.UIFigure, [msg, sprintf('\n\n提示：注释里的变量名需要和“参数”列一致；id 匹配最准确。')], ...
+                    '没有匹配到参数', 'Icon', 'warning');
+            else
+                uialert(app.UIFigure, msg, '导入注释', 'Icon', 'info');
+            end
+        end
+
+        function onClearAnnotations(app)
+            for k = 1:numel(app.Params)
+                app.Params(k).description = '';
+                app.Params(k).unit = '';
+            end
+            app.LastAnnotations = struct([]);
+            app.AnnotationFile = '';
+            app.refreshTable();
+            app.StatusLabel.Text = '已清空当前参数上的注释。';
         end
 
         % -----------------------------------------------------------------
@@ -1040,8 +1234,14 @@ classdef App < handle
             for k = 1:numel(app.Params)
                 p = app.Params(k);
                 if p.use && ~strcmp(strtrim(p.value), strtrim(p.newValue))
-                    footer = [footer, sprintf('%%   %s = %s  (原值 %s, 第 %d 行)\n', ...
-                        p.name, p.newValue, p.value, p.line)]; %#ok<AGROW>
+                    ann = annotationText(p);
+                    if isempty(ann)
+                        annSuffix = '';
+                    else
+                        annSuffix = ['  % ' ann];
+                    end
+                    footer = [footer, sprintf('%%   %s = %s  (原值 %s, 第 %d 行)%s\n', ...
+                        p.name, p.newValue, p.value, p.line, annSuffix)]; %#ok<AGROW>
                     anyChange = true;
                 end
             end
@@ -1153,6 +1353,8 @@ classdef App < handle
                 app.SaveButton, app.ReportButton, app.FolderButton, ...
                 app.ExportButton, app.CloseFiguresButton, ...
                 app.SelectAllButton, app.ResetButton, ...
+                app.AnnotateTemplateButton, app.ImportAnnotationButton, ...
+                app.ClearAnnotationButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -1171,6 +1373,9 @@ classdef App < handle
                     app.RunButton.Enable = 'off';
                     app.SaveButton.Enable = 'off';
                     app.ExportButton.Enable = 'off';
+                    app.AnnotateTemplateButton.Enable = 'off';
+                    app.ImportAnnotationButton.Enable = 'off';
+                    app.ClearAnnotationButton.Enable = 'off';
                 elseif app.IsFunctionFile
                     app.RunButton.Enable = 'off';
                 end
@@ -1190,6 +1395,37 @@ classdef App < handle
                 end
             end
             drawnow;
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function s = annotationText(p)
+%ANNOTATIONTEXT Format a parameter's AI annotation for the table/report.
+    s = '';
+    if isfield(p, 'description')
+        s = p.description;
+    end
+    if isfield(p, 'unit') && ~isempty(p.unit)
+        if isempty(s)
+            s = ['[' p.unit ']'];
+        else
+            s = sprintf('%s (%s)', s, p.unit);
+        end
+    end
+    if numel(s) > 200
+        s = [s(1:197), '...'];
+    end
+end
+
+% -------------------------------------------------------------------------
+function tf = hasAnyAnnotation(anns)
+%HASANYANNOTATION True when at least one annotation has content.
+    tf = false;
+    for k = 1:numel(anns)
+        if ~isempty(anns(k).description) || ~isempty(anns(k).unit)
+            tf = true;
+            return;
         end
     end
 end

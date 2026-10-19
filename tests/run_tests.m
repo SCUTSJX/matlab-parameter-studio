@@ -82,7 +82,45 @@ function run_tests()
         '@param category should be annotated');
     fprintf('  @param annotations: ok\n');
 
-    % --- 6. Function file detection --------------------------------------
+    % --- 6. AI annotation template + import ------------------------------
+    annoPath = fullfile(tempdir, 'mps_annotation_template.json');
+    mps.writeAnnotationTemplate(demo, p, annoPath);
+    assert(isfile(annoPath), 'annotation template not written');
+    j = jsondecode(fileread(annoPath));
+    assert(isfield(j, 'parameters'), 'template must contain parameters');
+    assert(numel(j.parameters) == numel(p), ...
+        'template should contain one entry per parameter');
+    assert(isfield(j, 'instructions'), 'template must contain instructions');
+
+    % Compact name -> description map (easiest shape for an AI).
+    mapPath = fullfile(tempdir, 'mps_annotation_map.json');
+    fid = fopen(mapPath, 'w', 'n', 'UTF-8');
+    fprintf(fid, '%s', ['{"m":"mass (kg)",' ...
+        '"k":{"description":"spring stiffness","unit":"N/m"},' ...
+        '"request.gains.eta":"learning rate"}']);
+    fclose(fid);
+    anns = mps.readAnnotations(mapPath);
+    assert(numel(anns) == 3, 'map annotations should have 3 entries');
+    [pAnn, statsAnn] = mps.applyAnnotations(p, anns);
+    assert(statsAnn.matched == 2, 'm and k should match by name');
+    mi = find(strcmp({pAnn.name}, 'm'), 1);
+    assert(strcmp(pAnn(mi).description, 'mass (kg)'), 'm description missing');
+    ki = find(strcmp({pAnn.name}, 'k'), 1);
+    assert(strcmp(pAnn(ki).unit, 'N/m'), 'k unit missing');
+
+    % Template round trip: fill the first entry and match it by id.
+    j.parameters(1).description = '待确认的测试注释';
+    j.parameters(1).unit = '';
+    filledPath = fullfile(tempdir, 'mps_annotation_filled.json');
+    fid = fopen(filledPath, 'w', 'n', 'UTF-8');
+    fprintf(fid, '%s', jsonencode(j));
+    fclose(fid);
+    anns2 = mps.readAnnotations(filledPath);
+    [~, stats2] = mps.applyAnnotations(p, anns2);
+    assert(stats2.matched == 1, 'template entry should match by id');
+    fprintf('  AI annotations: ok\n');
+
+    % --- 7. Function file detection --------------------------------------
     funcFile = fullfile(tempdir, 'mps_func_test.m');
     fid = fopen(funcFile, 'w', 'n', 'UTF-8');
     fprintf(fid, 'function y=f(x)\ny=x+1;\nend\n');

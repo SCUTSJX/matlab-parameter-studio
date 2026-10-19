@@ -75,6 +75,44 @@
 
 `% @param` 是给 AI 生成代码准备的“显式标记”：如果你希望某个数字永远出现在推荐列表里，在该行或上一行注释里写 `@param` 即可。
 
+### 给参数加注释（让 AI 写含义）
+
+参数名叫 `Kp`、`eta`、`request.gains.gamma2` 时，光看名字经常不知道是什么。可以走这条 AI 协作流程：
+
+1. 打开 `.m` 文件，点左侧的 **“生成注释 JSON”**。默认生成 `<文件名>_annotations.json`，每个参数都带有：
+   - `id`（精确到文件、行、列，用于回填匹配）
+   - `name`、`value`、`line`、`category`、`note`（代码里的注释）
+   - `context`（当前行源码）、`contextBefore` / `contextAfter`（上下各两行）
+   - 待填写的 `description`（中文含义/物理意义）和 `unit`（单位）
+   - 文件顶部自带 `instructions`，AI 打开就知道要填什么、哪些字段不能改
+2. 把这个 JSON 发给 AI（ChatGPT / Claude / 本助手都行），让它为每个参数填写 `description` 和 `unit`。
+3. 回到应用点 **“导入注释”**：参数表的 **“注释”** 列会显示含义和单位；运行后的 HTML 报告、保存的 `_tuned.m` 末尾的改动说明也会带上注释。
+4. 重新打开同一个 `.m` 文件时，如果旁边存在 `<文件名>_annotations.json` 且里面有内容，会自动载入；点“清空注释”可以移除。
+
+AI 返回的格式很宽松，以下几种都支持：
+
+```jsonc
+// 1) 最简：变量名 -> 含义
+{ "m": "质量", "k": "弹簧刚度" }
+
+// 2) 变量名 -> 含义 + 单位
+{
+  "m": { "description": "质量", "unit": "kg" },
+  "request.gains.eta": { "description": "学习率", "unit": "" }
+}
+
+// 3) 直接填写“生成注释 JSON”里的模板（推荐，匹配最准）
+{
+  "schema": "mps.annotations.v1",
+  "parameters": [
+    { "id": "……|12|5", "name": "m", "value": "1.0",
+      "description": "质量", "unit": "kg" }
+  ]
+}
+```
+
+匹配规则：优先用 `id`（精确到文件/行/列），其次 `name + line`，最后唯一 `name`；同名参数（例如同一行里两个 `switch_time`）不会被猜测，会提示无法匹配。
+
 ### 推荐分数
 
 扫描器会给每个数字一个分数。命名清晰、带注释、位于赋值右侧的数字分高；绘图样式（`LineWidth`、`FontSize`）、布局（`figure('Position',...)`）、数组尺寸（`zeros(1,1000)`）、索引（`x(:,1)`）和循环控制数字分低，默认不勾选。你可以在“全部数字”里查看并手动勾选。
@@ -130,6 +168,9 @@ MatlabParameterStudio.m      启动入口（函数）
 +mps/summarizeWorkspace.m    工作区变量摘要
 +mps/writeReport.m           HTML 报告 + parameters.json
 +mps/validateValue.m         新值校验（只允许数值表达式）
++mps/writeAnnotationTemplate.m  生成 AI 注释模板 JSON
++mps/readAnnotations.m       读取注释 JSON（支持 3 种格式）
++mps/applyAnnotations.m      按 id / name+line / name 匹配注释
 demo/demo_simulation.m       弹簧-阻尼示例
 demo/relative_demo.m         相对路径加载示例
 tests/run_tests.m            自测
@@ -144,7 +185,7 @@ addpath('tests')
 run_tests
 ```
 
-测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、函数文件扫描。
+测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、报告生成、多行嵌套 `struct`、`% @param` 标记、AI 注释模板与导入、函数文件扫描。
 
 ## 已知限制
 

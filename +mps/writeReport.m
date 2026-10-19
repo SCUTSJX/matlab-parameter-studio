@@ -97,7 +97,7 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
     if isempty(used)
         out{end+1} = '<p class="muted">本次没有勾选任何参数。脚本仍然按原值运行。</p>';
     else
-        out{end+1} = '<table><thead><tr><th>参数</th><th>原值</th><th>新值</th><th>行</th><th>类型</th><th>说明</th></tr></thead><tbody>';
+        out{end+1} = '<table><thead><tr><th>参数</th><th>原值</th><th>新值</th><th>行</th><th>类型</th><th>注释</th><th>代码说明</th></tr></thead><tbody>';
         for k = 1:numel(used)
             p = used(k);
             changed = ~strcmp(strtrim(p.value), strtrim(p.newValue));
@@ -110,9 +110,10 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
                 oldCell = htmlEscape(p.value);
                 newCell = htmlEscape(p.value);
             end
-            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td></tr>', ...
+            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
                 rowClass, htmlEscape(p.name), oldCell, newCell, ...
-                p.line, htmlEscape(categoryLabel(p.category)), htmlEscape(p.note)); %#ok<AGROW>
+                p.line, htmlEscape(categoryLabel(p.category)), ...
+                htmlEscape(annotationText(p)), htmlEscape(p.note)); %#ok<AGROW>
         end
         out{end+1} = '</tbody></table>';
     end
@@ -177,12 +178,17 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
 
     % Parameter record for later reuse / audits.
     record = struct('name', {}, 'value', {}, 'newValue', {}, 'use', {}, ...
-        'line', {}, 'category', {}, 'note', {});
+        'line', {}, 'category', {}, 'note', {}, 'description', {}, 'unit', {});
     for k = 1:numel(params)
+        description = '';
+        unit = '';
+        if isfield(params, 'description'), description = params(k).description; end
+        if isfield(params, 'unit'), unit = params(k).unit; end
         record(end+1) = struct('name', params(k).name, 'value', params(k).value, ...
             'newValue', params(k).newValue, 'use', params(k).use, ...
             'line', params(k).line, 'category', params(k).category, ...
-            'note', params(k).note); %#ok<AGROW>
+            'note', params(k).note, 'description', description, ...
+            'unit', unit); %#ok<AGROW>
     end
     jsonPath = fullfile(outDir, 'parameters.json');
     fid2 = fopen(jsonPath, 'w', 'n', 'UTF-8');
@@ -209,6 +215,22 @@ function s = htmlEscape(s)
     s = strrep(s, '>', '&gt;');
     s = strrep(s, '"', '&quot;');
     s = strrep(s, '''', '&#39;');
+end
+
+% -------------------------------------------------------------------------
+function s = annotationText(p)
+%ANNOTATIONTEXT Format the AI annotation for the report table.
+    s = '';
+    if isfield(p, 'description')
+        s = p.description;
+    end
+    if isfield(p, 'unit') && ~isempty(p.unit)
+        if isempty(s)
+            s = ['[' p.unit ']'];
+        else
+            s = sprintf('%s (%s)', s, p.unit);
+        end
+    end
 end
 
 % -------------------------------------------------------------------------

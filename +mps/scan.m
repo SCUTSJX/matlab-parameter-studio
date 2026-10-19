@@ -170,6 +170,8 @@ function params = scan(filePath, varargin)
             p.sourceFile = filePath;
             p.literalIndex = k;
             p.isLogical = lit.isLogical;
+            p.description = '';
+            p.unit = '';
 
             % --- 1. Struct field names are the strongest signal. ---------
             if isKey(structMap, lit.start)
@@ -253,7 +255,7 @@ function p = emptyParams()
         'line', {}, 'colStart', {}, 'colEnd', {}, 'score', {}, ...
         'category', {}, 'note', {}, 'context', {}, 'use', {}, ...
         'isChanged', {}, 'sourceFile', {}, 'literalIndex', {}, ...
-        'isLogical', {});
+        'isLogical', {}, 'description', {}, 'unit', {});
 end
 
 % -------------------------------------------------------------------------
