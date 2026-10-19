@@ -83,6 +83,10 @@ classdef SweepDialog < handle
         function createUI(dlg)
             dlg.UIFigure = uifigure('Name', '批量扫描', ...
                 'Position', [220 120 880 660]);
+            try
+                dlg.UIFigure.Theme = 'light';   % R2025a+
+            catch
+            end
             root = uigridlayout(dlg.UIFigure, [5 1]);
             root.RowHeight = {30, 30, '1x', 130, 36};
             root.Padding = [12 12 12 12];
@@ -123,7 +127,7 @@ classdef SweepDialog < handle
             og.RowSpacing = 4;
 
             dlg.OverlayCheck = uicheckbox(og, ...
-                'Text', '扫描结束后把各组的 X/Y 曲线画在同一张图上', ...
+                'Text', '扫描结束后叠加 X/Y 曲线，并计算指标 CSV（带图例）', ...
                 'Value', false);
             dlg.OverlayCheck.Layout.Row = 1;
             dlg.OverlayCheck.Layout.Column = [1 2];

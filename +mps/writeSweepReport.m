@@ -1,20 +1,30 @@
-function reportPath = writeSweepReport(sweepRoot, sourceFile, names, values, ...
-    scenarios, results, overlayPath)
+function [reportPath, metricsPath] = writeSweepReport(sweepRoot, ...
+    sourceFile, names, values, scenarios, results, overlayPath, metrics)
 %WRITESWEEPREPORT HTML report for a completed parameter sweep.
 %
-%   reportPath = mps.writeSweepReport(sweepRoot, sourceFile, names, values, ...
-%       scenarios, results, overlayPath)
+%   [reportPath, metricsPath] = mps.writeSweepReport(sweepRoot, ...
+%       sourceFile, names, values, scenarios, results, overlayPath, metrics)
 %
 %   names     - cell array of swept parameter names
 %   values    - cell array of numeric value lists
 %   scenarios - struct array from mps.sweepScenarios
 %   results   - struct array with fields label, runDir, ok, error,
-%               figures, elapsed
+%               figures, elapsed, workspaceData
+%   metrics   - optional struct array from mps.sweepMetrics.  When omitted,
+%               run-level rows are still written to sweep_summary.csv.
+%
+%   The report lists the scanned groups, their status and elapsed time,
+%   metrics for the selected overlay variables, the overlay curves and all
+%   figures produced by each group.
 
     if nargin < 7
         overlayPath = '';
     end
+    if nargin < 8
+        metrics = [];
+    end
     reportPath = fullfile(sweepRoot, 'sweep_report.html');
+    metricsPath = fullfile(sweepRoot, 'sweep_summary.csv');
     fid = fopen(reportPath, 'w', 'n', 'UTF-8');
     if fid < 0
         error('mps:writeSweepReport:cannotWrite', '无法写入：%s', reportPath);
@@ -87,6 +97,30 @@ function reportPath = writeSweepReport(sweepRoot, sourceFile, names, values, ...
     end
     out{end+1} = '</tbody></table></div>';
 
+    % Metrics for the selected overlay variables
+    out{end+1} = '<h2>结果指标</h2><div class="panel">';
+    hasY = false;
+    if ~isempty(metrics)
+        hasY = any(~cellfun(@isempty, {metrics.yName}));
+    end
+    if ~hasY
+        out{end+1} = '<p class="muted">没有曲线指标：请在“批量扫描”里勾选“叠加曲线”并选择 X/Y 变量。<a href="sweep_summary.csv">下载 sweep_summary.csv</a>（仍包含每组的耗时和输出图数量）。</p>';
+    else
+        out{end+1} = '<p class="muted">指标基于叠加曲线选择的 X/Y 变量；<a href="sweep_summary.csv">下载 sweep_summary.csv</a>。</p>';
+        out{end+1} = '<table><thead><tr><th>#</th><th>参数取值</th><th>Y</th><th>最小</th><th>最大</th><th>末值</th><th>绝对峰值</th><th>RMS</th><th>峰值时刻</th></tr></thead><tbody>';
+        for k = 1:numel(metrics)
+            m = metrics(k);
+            out{end+1} = sprintf( ...
+                '<tr><td>%d</td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
+                m.run, htmlEscape(m.label), htmlEscape(m.yName), ...
+                fmtNum(m.minValue), fmtNum(m.maxValue), ...
+                fmtNum(m.finalValue), fmtNum(m.absPeak), fmtNum(m.rms), ...
+                fmtNum(m.peakTime)); %#ok<AGROW>
+        end
+        out{end+1} = '</tbody></table>';
+    end
+    out{end+1} = '</div>';
+
     % Overlay
     if ~isempty(overlayPath) && isfile(overlayPath)
         out{end+1} = '<h2>叠加曲线</h2><div class="panel">';
@@ -148,6 +182,59 @@ function reportPath = writeSweepReport(sweepRoot, sourceFile, names, values, ...
         end
         fclose(fid2);
     end
+
+    % CSV summary: one row per scenario (and per Y variable when metrics
+    % are available).
+    if isempty(metrics)
+        metrics = basicMetrics(results);
+    end
+    if ~isempty(metrics)
+        try
+            T = struct2table(metrics);
+            writetable(T, metricsPath, 'Encoding', 'UTF-8');
+        catch
+            metricsPath = '';
+        end
+    else
+        metricsPath = '';
+    end
+
+    % Machine-readable run record used by the run history browser.
+    meta = struct( ...
+        'sourceFile', sourceFile, ...
+        'created', stamp, ...
+        'ok', nFail == 0, ...
+        'error', '', ...
+        'elapsedSeconds', sum([results.elapsed]), ...
+        'figureCount', nFig, ...
+        'count', numel(results), ...
+        'failed', nFail, ...
+        'names', {names}, ...
+        'isSweep', true);
+    try
+        fid3 = fopen(fullfile(sweepRoot, 'run.json'), 'w', 'n', 'UTF-8');
+        if fid3 >= 0
+            fprintf(fid3, '%s', jsonencode(meta));
+            fclose(fid3);
+        end
+    catch
+    end
+end
+
+% -------------------------------------------------------------------------
+function metrics = basicMetrics(results)
+    metrics = struct('run', {}, 'label', {}, 'ok', {}, 'elapsed', {}, ...
+        'figures', {}, 'yName', {}, 'minValue', {}, 'maxValue', {}, ...
+        'finalValue', {}, 'absPeak', {}, 'rms', {}, 'peakTime', {});
+    for k = 1:numel(results)
+        r = results(k);
+        metrics(end+1) = struct( ...
+            'run', k, 'label', char(r.label), 'ok', logical(r.ok), ...
+            'elapsed', double(r.elapsed), ...
+            'figures', numel(r.figures), 'yName', '', ...
+            'minValue', NaN, 'maxValue', NaN, 'finalValue', NaN, ...
+            'absPeak', NaN, 'rms', NaN, 'peakTime', NaN); %#ok<AGROW>
+    end
 end
 
 % -------------------------------------------------------------------------
@@ -165,6 +252,15 @@ function s = valueListText(names, values)
         parts{k} = sprintf('%s = %s', names{k}, list);
     end
     s = strjoin(parts, '；');
+end
+
+% -------------------------------------------------------------------------
+function s = fmtNum(v)
+    if isempty(v) || ~isnumeric(v) || isnan(v)
+        s = '-';
+    else
+        s = num2str(v, '%.6g');
+    end
 end
 
 % -------------------------------------------------------------------------

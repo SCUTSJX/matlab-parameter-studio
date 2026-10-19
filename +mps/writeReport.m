@@ -185,12 +185,13 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
     end
 
     % Parameter record for later reuse / audits.
-    record = struct('name', {}, 'value', {}, 'newValue', {}, 'use', {}, ...
-        'line', {}, 'category', {}, 'note', {}, 'description', {}, 'unit', {}, ...
-        'locked', {});
+    record = struct('id', {}, 'name', {}, 'value', {}, 'newValue', {}, ...
+        'use', {}, 'line', {}, 'category', {}, 'note', {}, ...
+        'description', {}, 'unit', {}, 'locked', {});
     for k = 1:numel(params)
         [description, unit, locked] = localFields(params(k));
-        record(end+1) = struct('name', params(k).name, 'value', params(k).value, ...
+        record(end+1) = struct('id', idField(params(k)), ...
+            'name', params(k).name, 'value', params(k).value, ...
             'newValue', params(k).newValue, 'use', params(k).use, ...
             'line', params(k).line, 'category', params(k).category, ...
             'note', params(k).note, 'description', description, ...
@@ -205,6 +206,45 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
 
     try
         save(fullfile(outDir, 'parameters.mat'), 'params');
+    catch
+    end
+
+    % Machine-readable run record used by the run history browser.
+    resultOk = false;
+    resultError = '';
+    if isfield(result, 'ok'), resultOk = logical(result.ok); end
+    if isfield(result, 'error'), resultError = char(result.error); end
+    meta = struct( ...
+        'sourceFile', sourceFile, ...
+        'created', stamp, ...
+        'ok', resultOk, ...
+        'error', resultError, ...
+        'elapsedSeconds', elapsed, ...
+        'figureCount', numel(result.figures), ...
+        'workspaceCount', numel(result.workspace), ...
+        'matlabVersion', matlabVersion, ...
+        'isSweep', false);
+    writeRunJson(fullfile(outDir, 'run.json'), meta);
+end
+
+% -------------------------------------------------------------------------
+function s = idField(p)
+    s = '';
+    if isfield(p, 'id')
+        s = char(p.id);
+    end
+end
+
+% -------------------------------------------------------------------------
+function writeRunJson(path, meta)
+    try
+        fid = fopen(path, 'w', 'n', 'UTF-8');
+        if fid < 0
+            return;
+        end
+        cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
+        fprintf(fid, '%s', jsonencode(meta));
+        clear cleaner;
     catch
     end
 end

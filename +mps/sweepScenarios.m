@@ -33,7 +33,7 @@ function scenarios = sweepScenarios(names, values, maxCount)
         for j = 1:numel(values)
             v = values{j}(idx(j));
             combo{j} = v;
-            parts{j} = sprintf('%s=%g', names{j}, v);
+            parts{j} = sprintf('%s=%.10g', names{j}, v);
         end
         scenarios(end+1) = struct('values', {combo}, ...
             'label', {strjoin(parts, ', ')}); %#ok<AGROW>

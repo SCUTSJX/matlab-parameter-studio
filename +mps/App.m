@@ -12,8 +12,6 @@ classdef App < handle
         LastWorkspace = struct()
         LastReport = ''
         OutputDir = ''
-        PreviousRun = struct()
-        PreviousOutDir = ''
     end
 
     properties (Access = private)
@@ -31,10 +29,11 @@ classdef App < handle
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
-        PresetDeleteButton, SweepButton
+        PresetDeleteButton, SweepButton, BulkButton
         SourceLines = {}
         VisibleIdx = []
-        SelectedRow = 0
+        SelectedParams = []
+        SelectedVisibleRows = []
         IsFunctionFile = false
         CustomPlotPath = ''
         LastAnnotations = struct([])
@@ -160,9 +159,8 @@ classdef App < handle
             app.OutputDir = '';
             app.CustomPlotPath = '';
             app.FigurePaths = {};
-            app.PreviousRun = struct();
-            app.PreviousOutDir = '';
-            app.SelectedRow = 0;
+            app.SelectedParams = [];
+            app.SelectedVisibleRows = [];
 
             app.FileLabel.Text = filePath;
             app.FileLabel.FontColor = [0.12 0.12 0.12];
@@ -198,7 +196,8 @@ classdef App < handle
             app.ImportAnnotationButton.Enable = 'on';
             app.ClearAnnotationButton.Enable = 'on';
             app.LockButton.Enable = 'on';
-            app.CompareButton.Enable = 'off';
+            app.BulkButton.Enable = 'on';
+            app.CompareButton.Enable = 'on';
             app.ReportButton.Enable = 'off';
             app.FolderButton.Enable = 'off';
             app.CloseFiguresButton.Enable = 'off';
@@ -433,8 +432,8 @@ classdef App < handle
                 'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCloseFigures());
             app.CloseFiguresButton.Layout.Column = 9;
 
-            app.CompareButton = uibutton(tb, 'Text', '对比上次运行', ...
-                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onCompareRuns());
+            app.CompareButton = uibutton(tb, 'Text', '运行历史', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(s, e) app.onRunHistory());
             app.CompareButton.Layout.Column = 10;
 
             app.HelpButton = uibutton(tb, 'Text', '快速上手', ...
@@ -454,9 +453,9 @@ classdef App < handle
             lg.Padding = [8 8 8 8];
             lg.RowSpacing = 6;
 
-            fg = uigridlayout(lg, [1 5]);
+            fg = uigridlayout(lg, [1 6]);
             fg.Layout.Row = 1;
-            fg.ColumnWidth = {120, '1x', 150, 92, 92};
+            fg.ColumnWidth = {120, '1x', 150, 92, 92, 104};
             fg.Padding = [0 0 0 0];
             fg.ColumnSpacing = 6;
 
@@ -483,6 +482,11 @@ classdef App < handle
             app.ResetButton = uibutton(fg, 'Text', '重置新值', ...
                 'ButtonPushedFcn', @(s, e) app.onReset());
             app.ResetButton.Layout.Column = 5;
+
+            app.BulkButton = uibutton(fg, 'Text', '批量修改...', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(s, e) app.onBulkEdit());
+            app.BulkButton.Layout.Column = 6;
 
             ag = uigridlayout(lg, [1 6]);
             ag.Layout.Row = 2;
@@ -561,6 +565,10 @@ classdef App < handle
                 'CellEditCallback', @(s, e) app.onCellEdit(s, e), ...
                 'CellSelectionCallback', @(s, e) app.onCellSelect(s, e));
             app.Table.Layout.Row = 4;
+            try
+                app.Table.Multiselect = 'on';   % R2023b+
+            catch
+            end
 
             app.SourcePreview = uitextarea(lg, 'Editable', 'off', ...
                 'FontName', 'Consolas', 'FontSize', 11, 'Value', {''});
@@ -679,7 +687,9 @@ classdef App < handle
             set(app.CloseFiguresButton, 'Tooltip', ...
                 '关掉本次运行留在屏幕上的图窗');
             set(app.CompareButton, 'Tooltip', ...
-                '把“上一次运行”和“这一次运行”做成对比报告');
+                '查看历史运行，任意两次做对比，或载入某次的参数');
+            set(app.BulkButton, 'Tooltip', ...
+                '对多选行批量设值、乘系数、勾选、锁定，或从 Excel 粘贴一列');
             set(app.HelpButton, 'Tooltip', '30 秒看懂：从打开文件到保存结果');
 
             set(app.FilterDrop, 'Tooltip', ...
@@ -741,6 +751,8 @@ classdef App < handle
                 app.onRun();
             elseif strcmp(key, 'o') && hasCtrl
                 app.onOpen();
+            elseif strcmp(key, 'b') && hasCtrl
+                app.onBulkEdit();
             end
         end
 
@@ -780,9 +792,10 @@ classdef App < handle
                 '5. 满意后点“保存调参 .m”，得到可以直接运行的脚本。', ...
                 '', ...
                 '常用进阶（不清楚可以先不用）：', ...
+                '· 批量改参数：Ctrl/Shift 多选行 → 点“批量修改...”或按 Ctrl+B。', ...
                 '· 看不懂参数含义：生成注释 JSON → 给 AI 填写 → 导入注释。', ...
                 '· 想存几套方案：在“参数集”输入名字 → 保存为参数集。', ...
-                '· 想对比两次：改参数再运行一次 → 点“对比上次运行”。', ...
+                '· 想对比两次：点“运行历史”，任选两次设为 A/B 后对比。', ...
                 '· 想批量试值：点“批量扫描...”，填 1,2,4 或 1:0.5:5。', ...
                 '', ...
                 '提示：运行脚本时图窗默认不弹出，不会打扰你；', ...
@@ -915,10 +928,6 @@ classdef App < handle
                 catch
                 end
                 clear scriptCleaner;
-                if isfield(app.LastRun, 'outDir') && isfolder(app.LastRun.outDir)
-                    app.PreviousRun = app.LastRun;
-                    app.PreviousOutDir = app.LastRun.outDir;
-                end
                 app.LastRun = r;
                 app.LastWorkspace = r.workspaceData;
 
@@ -936,9 +945,7 @@ classdef App < handle
                 app.ReportButton.Enable = 'on';
                 app.FolderButton.Enable = 'on';
                 app.CloseFiguresButton.Enable = 'on';
-                if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir)
-                    app.CompareButton.Enable = 'on';
-                end
+                app.CompareButton.Enable = 'on';
 
                 if r.ok
                     app.StatusLabel.Text = sprintf( ...
@@ -1018,6 +1025,8 @@ classdef App < handle
             if isempty(app.Params)
                 app.Table.Data = cell(0, 9);
                 app.VisibleIdx = [];
+                app.SelectedParams = [];
+                app.SelectedVisibleRows = [];
                 app.CountLabel.Text = '0 / 0';
                 app.updateAnnotationStatus();
                 return;
@@ -1079,6 +1088,7 @@ classdef App < handle
                 data{j,9} = annotationText(p);
             end
             app.Table.Data = data;
+            app.restoreTableSelection();
             app.CountLabel.Text = sprintf('%d / %d · 已修改 %d', ...
                 numel(idx), numel(app.Params), sum([app.Params.isChanged]));
             app.updateAnnotationStatus();
@@ -1140,19 +1150,62 @@ classdef App < handle
             app.refreshTable();
         end
 
+        function restoreTableSelection(app)
+            %RESTORETABLESELECTION Keep selected parameters across refreshes.
+            if ~isempty(app.SelectedParams)
+                [keep, visibleRows] = ismember(app.SelectedParams, ...
+                    app.VisibleIdx);
+                app.SelectedParams = app.SelectedParams(keep);
+                visibleRows = visibleRows(keep);
+            else
+                visibleRows = [];
+            end
+            app.SelectedVisibleRows = visibleRows(:)';
+            try
+                if isempty(visibleRows)
+                    app.Table.Selection = [];
+                else
+                    app.Table.Selection = [visibleRows(:), ...
+                        ones(numel(visibleRows), 1)];
+                end
+            catch
+            end
+            app.updateLockButton();
+        end
+
         function onCellSelect(app, ~, event)
             if isempty(event.Indices) || isempty(app.VisibleIdx)
+                app.SelectedParams = [];
+                app.SelectedVisibleRows = [];
                 app.SourcePreview.Value = {''};
+                app.updateLockButton();
                 return;
             end
-            row = event.Indices(1);
-            if row < 1 || row > numel(app.VisibleIdx)
+            rows = [];
+            try
+                selection = app.Table.Selection;
+                if ~isempty(selection)
+                    rows = unique(selection(:, 1));
+                end
+            catch
+            end
+            if isempty(rows)
+                rows = unique(event.Indices(:, 1));
+            end
+            rows = rows(rows >= 1 & rows <= numel(app.VisibleIdx));
+            if isempty(rows)
+                app.SelectedParams = [];
+                app.SelectedVisibleRows = [];
                 app.SourcePreview.Value = {''};
+                app.updateLockButton();
                 return;
             end
-            idx = app.VisibleIdx(row);
-            app.SelectedRow = row;
+            app.SelectedVisibleRows = rows(:)';
+            app.SelectedParams = app.VisibleIdx(rows);
             app.updateLockButton();
+
+            row = rows(end);
+            idx = app.VisibleIdx(row);
             if isempty(app.SourceLines)
                 app.SourcePreview.Value = {''};
                 return;
@@ -1204,6 +1257,54 @@ classdef App < handle
             end
             app.refreshTable();
             app.StatusLabel.Text = '已把所有新值重置为当前值。';
+        end
+
+        function onBulkEdit(app)
+            %ONBULKEDIT Batch operations for the multi-selected rows.
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            if isempty(app.Params)
+                return;
+            end
+            dlg = mps.BulkEditDialog(app.Params, app.SelectedParams, ...
+                app.VisibleIdx);
+            uiwait(dlg.UIFigure);
+            result = dlg.Result;
+            delete(dlg);
+            if ~isstruct(result) || ~isfield(result, 'op')
+                return;   % cancelled
+            end
+
+            try
+                if strcmp(result.op, 'paste')
+                    [app.Params, stats] = mps.applyPastedValues( ...
+                        app.Params, result.indices, result.values);
+                else
+                    [app.Params, stats] = mps.bulkEdit( ...
+                        app.Params, result.indices, result.op, result.value);
+                end
+            catch err
+                uialert(app.UIFigure, err.message, '批量修改失败', ...
+                    'Icon', 'error');
+                return;
+            end
+
+            app.refreshTable();
+            msg = sprintf('批量修改：%d 个参数已更新', stats.changed);
+            if stats.skippedLocked > 0
+                msg = sprintf('%s，跳过已锁定 %d 个', msg, stats.skippedLocked);
+            end
+            if stats.skippedNonNumeric > 0
+                msg = sprintf('%s，跳过非数值 %d 个', msg, ...
+                    stats.skippedNonNumeric);
+            end
+            if stats.skippedInvalid > 0
+                msg = sprintf('%s，跳过无效 %d 个', msg, stats.skippedInvalid);
+            end
+            app.StatusLabel.Text = [msg '。'];
         end
 
         % -----------------------------------------------------------------
@@ -1304,36 +1405,44 @@ classdef App < handle
         end
 
         function updateLockButton(app)
-            if app.SelectedRow < 1 || app.SelectedRow > numel(app.VisibleIdx)
+            indices = app.SelectedParams;
+            if isempty(indices)
                 app.LockButton.Text = '锁定选中';
                 return;
             end
-            idx = app.VisibleIdx(app.SelectedRow);
-            if app.Params(idx).locked
-                app.LockButton.Text = '解锁选中';
+            if all([app.Params(indices).locked])
+                app.LockButton.Text = sprintf('解锁选中 (%d)', numel(indices));
             else
-                app.LockButton.Text = '锁定选中';
+                app.LockButton.Text = sprintf('锁定选中 (%d)', numel(indices));
             end
         end
 
         function onToggleLock(app)
-            if app.SelectedRow < 1 || app.SelectedRow > numel(app.VisibleIdx)
-                uialert(app.UIFigure, '请先在参数表里点选一行。', ...
+            indices = app.SelectedParams;
+            if isempty(indices)
+                uialert(app.UIFigure, '请先在参数表里点选一行（可多选）。', ...
                     '没有选中行', 'Icon', 'warning');
                 return;
             end
-            idx = app.VisibleIdx(app.SelectedRow);
-            app.Params(idx).locked = ~app.Params(idx).locked;
-            if app.Params(idx).locked
-                app.Params(idx).newValue = app.Params(idx).value;
-                app.Params(idx).isChanged = false;
-                app.StatusLabel.Text = sprintf('已锁定：%s（新值保持原值）', ...
-                    app.Params(idx).name);
+            if all([app.Params(indices).locked])
+                for idx = indices
+                    app.Params(idx).locked = false;
+                    app.Params(idx).isChanged = ~strcmp( ...
+                        strtrim(app.Params(idx).value), ...
+                        strtrim(app.Params(idx).newValue));
+                end
+                app.StatusLabel.Text = sprintf('已解锁 %d 个参数。', ...
+                    numel(indices));
             else
-                app.StatusLabel.Text = sprintf('已解锁：%s', app.Params(idx).name);
+                for idx = indices
+                    app.Params(idx).locked = true;
+                    app.Params(idx).newValue = app.Params(idx).value;
+                    app.Params(idx).isChanged = false;
+                end
+                app.StatusLabel.Text = sprintf( ...
+                    '已锁定 %d 个参数（新值保持原值）。', numel(indices));
             end
             app.refreshTable();
-            app.updateLockButton();
         end
 
         % ---- Parameter presets -------------------------------------
@@ -1503,7 +1612,7 @@ classdef App < handle
         function summary = runSweep(app, activeIdx, values, overlay, xName, yNames)
             %RUNSWEEP Execute the cartesian product and build reports.
             summary = struct('ok', false, 'sweepRoot', '', 'count', 0, ...
-                'report', '', 'overlayPath', '');
+                'report', '', 'overlayPath', '', 'metricsPath', '');
             if isempty(app.SourceFile) || isempty(activeIdx)
                 return;
             end
@@ -1573,14 +1682,16 @@ classdef App < handle
                     overlayPath = app.makeSweepOverlay(sweepRoot, ...
                         results, xName, yNames);
                 end
+                metrics = mps.sweepMetrics(results, xName, yNames);
 
                 agg = app.aggregateSweepRun(sweepRoot, results, overlayPath);
+                agg.metrics = metrics;
                 app.LastRun = agg;
                 app.LastWorkspace = agg.workspaceData;
                 app.OutputDir = sweepRoot;
-                app.LastReport = mps.writeSweepReport(sweepRoot, ...
-                    app.SourceFile, names, values, scenarios, ...
-                    results, overlayPath);
+                [app.LastReport, metricsPath] = mps.writeSweepReport( ...
+                    sweepRoot, app.SourceFile, names, values, scenarios, ...
+                    results, overlayPath, metrics);
 
                 app.refreshResults();
                 app.refreshWorkspace();
@@ -1593,15 +1704,23 @@ classdef App < handle
                 app.ReportButton.Enable = 'on';
                 app.FolderButton.Enable = 'on';
                 app.CloseFiguresButton.Enable = 'on';
+                app.CompareButton.Enable = 'on';
 
                 summary.ok = true;
                 summary.sweepRoot = sweepRoot;
                 summary.count = numel(results);
                 summary.report = app.LastReport;
                 summary.overlayPath = overlayPath;
-                app.StatusLabel.Text = sprintf( ...
-                    '批量扫描完成：%d 组，%d 张图。报告：%s', ...
-                    numel(results), numel(agg.figures), app.LastReport);
+                summary.metricsPath = metricsPath;
+                if isempty(metricsPath)
+                    app.StatusLabel.Text = sprintf( ...
+                        '批量扫描完成：%d 组，%d 张图。报告：%s', ...
+                        numel(results), numel(agg.figures), app.LastReport);
+                else
+                    app.StatusLabel.Text = sprintf( ...
+                        '批量扫描完成：%d 组，%d 张图。指标 CSV：%s', ...
+                        numel(results), numel(agg.figures), metricsPath);
+                end
             catch err
                 app.StatusLabel.Text = ['批量扫描失败：' err.message];
                 uialert(app.UIFigure, err.message, '批量扫描失败', ...
@@ -1753,21 +1872,35 @@ classdef App < handle
             hold on;
             grid on;
             plotted = 0;
+            cmap = lines(max(7, numel(results)));
+            styles = {'-', '--', ':', '-.'};
             for k = 1:numel(results)
                 ws = results(k).workspaceData;
                 if ~isstruct(ws) || ~isfield(ws, xName)
                     continue;
                 end
                 x = ws.(xName);
+                if ~(isnumeric(x) || islogical(x)) || ~isvector(x)
+                    continue;
+                end
                 for j = 1:numel(yNames)
                     if ~isfield(ws, yNames{j})
                         continue;
                     end
                     y = ws.(yNames{j});
-                    if numel(x) ~= numel(y)
+                    if ~(isnumeric(y) || islogical(y)) || ~isvector(y) || ...
+                            numel(x) ~= numel(y)
                         continue;
                     end
-                    plot(x, y, 'LineWidth', 1.2);
+                    if numel(yNames) == 1
+                        label = results(k).label;
+                    else
+                        label = sprintf('%s | %s', ...
+                            results(k).label, yNames{j});
+                    end
+                    style = styles{mod(j - 1, numel(styles)) + 1};
+                    plot(x, y, style, 'LineWidth', 1.2, ...
+                        'Color', cmap(k, :), 'DisplayName', label);
                     plotted = plotted + 1;
                 end
             end
@@ -1777,6 +1910,8 @@ classdef App < handle
             xlabel(xName, 'Interpreter', 'none');
             ylabel('值');
             title('批量扫描叠加曲线');
+            legend('Location', 'eastoutside', 'Interpreter', 'none', ...
+                'FontSize', 9);
             overlayPath = fullfile(sweepRoot, 'overlay.png');
             try
                 exportgraphics(fig, overlayPath, 'Resolution', 150, ...
@@ -1787,33 +1922,82 @@ classdef App < handle
             clear half;
         end
 
-        function onCompareRuns(app)
-            if isempty(app.PreviousOutDir) || ~isfolder(app.PreviousOutDir)
-                uialert(app.UIFigure, ...
-                    '还没有上一次运行可以对比。请先运行两次（改参数后再运行一次）。', ...
-                    '没有可对比的运行', 'Icon', 'warning');
+        function onRunHistory(app)
+            %ONRUNHISTORY Browse past runs, compare any two, load params.
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
                 return;
             end
-            if isempty(app.OutputDir) || ~isfolder(app.OutputDir)
-                uialert(app.UIFigure, '当前运行结果不存在。', ...
-                    '没有当前运行', 'Icon', 'warning');
+            root = fullfile(fileparts(app.SourceFile), 'parameter_studio_runs');
+            dlg = mps.RunHistoryDialog(root, ...
+                'SourceFile', app.SourceFile, ...
+                'CurrentOutDir', app.OutputDir);
+            uiwait(dlg.UIFigure);
+            result = dlg.Result;
+            delete(dlg);
+            if ~isstruct(result) || ~isfield(result, 'action') || ...
+                    ~strcmp(result.action, 'load')
                 return;
             end
-            target = fullfile(app.OutputDir, 'compare.html');
-            try
-                mps.compareRuns(app.PreviousOutDir, app.OutputDir, target);
-            catch err
-                uialert(app.UIFigure, err.message, '对比失败', 'Icon', 'error');
+            app.applyHistoryRun(result);
+        end
+
+        function applyHistoryRun(app, result)
+            %APPLYHISTORYRUN Load use/newValue/locked from an old run.
+            values = result.values;
+            if isempty(values)
+                uialert(app.UIFigure, '这次运行没有可载入的参数。', ...
+                    '无法载入', 'Icon', 'warning');
                 return;
             end
-            app.StatusLabel.Text = sprintf('运行对比报告已生成：%s', target);
-            try
-                web(target, '-browser');
-            catch
-                try
-                    winopen(target);
-                catch
+
+            meta = struct();
+            if isfield(result, 'meta') && isstruct(result.meta)
+                meta = result.meta;
+            end
+            if isfield(meta, 'sourceFile') && ~isempty(meta.sourceFile) && ...
+                    ~strcmpi(meta.sourceFile, app.SourceFile) && ...
+                    strcmp(app.UIFigure.Visible, 'on')
+                choice = uiconfirm(app.UIFigure, sprintf( ...
+                    ['这次运行来自另一个脚本：\n%s\n\n' ...
+                     '参数将尽量按名字和行号匹配，是否继续？'], ...
+                    meta.sourceFile), '源文件不同', ...
+                    'Options', {'继续', '取消'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2);
+                if ~strcmp(choice, '继续')
+                    return;
                 end
+            end
+            if any([app.Params.isChanged]) && ...
+                    strcmp(app.UIFigure.Visible, 'on')
+                choice = uiconfirm(app.UIFigure, ...
+                    '载入历史参数会覆盖当前的新值，是否继续？', ...
+                    '覆盖当前修改', 'Options', {'继续', '取消'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2);
+                if ~strcmp(choice, '继续')
+                    return;
+                end
+            end
+
+            preset = struct('name', '历史运行', 'values', values);
+            try
+                [app.Params, stats] = mps.applyPreset(app.Params, preset);
+            catch err
+                uialert(app.UIFigure, err.message, '载入失败', ...
+                    'Icon', 'error');
+                return;
+            end
+            app.refreshTable();
+            app.StatusLabel.Text = sprintf( ...
+                '已从历史运行载入参数：匹配 %d，重名跳过 %d，未匹配 %d。', ...
+                stats.matched, stats.ambiguous, stats.unmatched);
+            if stats.matched == 0
+                uialert(app.UIFigure, sprintf( ...
+                    ['没有匹配到参数（未匹配 %d 个）。\n\n' ...
+                     '通常是因为脚本改过变量名或行号；历史记录里的 ' ...
+                     'name + line 只在原脚本上最准确。'], stats.unmatched), ...
+                    '没有匹配', 'Icon', 'warning');
             end
         end
 
@@ -2179,11 +2363,7 @@ classdef App < handle
                 return;
             end
             try
-                if ispc
-                    winopen(app.OutputDir);
-                else
-                    system(['xdg-open "' app.OutputDir '" &']);
-                end
+                mps.openPath(app.OutputDir);
             catch err
                 uialert(app.UIFigure, err.message, '打开失败', 'Icon', 'error');
             end
@@ -2219,7 +2399,7 @@ classdef App < handle
                 app.ClearAnnotationButton, app.LockButton, ...
                 app.CompareButton, app.PresetSaveButton, ...
                 app.PresetLoadButton, app.PresetDeleteButton, ...
-                app.SweepButton, ...
+                app.SweepButton, app.BulkButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -2242,6 +2422,7 @@ classdef App < handle
                     app.ImportAnnotationButton.Enable = 'off';
                     app.ClearAnnotationButton.Enable = 'off';
                     app.LockButton.Enable = 'off';
+                    app.BulkButton.Enable = 'off';
                     app.CompareButton.Enable = 'off';
                     app.PresetSaveButton.Enable = 'off';
                     app.PresetLoadButton.Enable = 'off';
@@ -2264,11 +2445,10 @@ classdef App < handle
                         app.SweepButton.Enable = 'on';
                     end
                 end
-                if ~isempty(app.PreviousOutDir) && isfolder(app.PreviousOutDir) && ...
-                        ~isempty(app.OutputDir) && isfolder(app.OutputDir)
-                    app.CompareButton.Enable = 'on';
-                else
+                if isempty(app.SourceFile)
                     app.CompareButton.Enable = 'off';
+                else
+                    app.CompareButton.Enable = 'on';
                 end
                 if isempty(app.LastReport)
                     app.ReportButton.Enable = 'off';

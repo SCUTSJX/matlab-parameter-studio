@@ -310,6 +310,144 @@ function run_tests()
     fclose(fid);
     p4 = mps.scan(funcFile);
     assert(~isempty(p4), 'function bodies should still be scanned');
+    fprintf('  function file scanning: ok\n');
+
+    % --- 14. Bulk edit / paste -------------------------------------------
+    pB = mps.scan(demo);
+    ki = find(strcmp({pB.name}, 'k'), 1);
+    [pB, sB] = mps.bulkEdit(pB, ki, 'scale', '2');
+    assert(strcmp(pB(ki).newValue, '8'), 'scale should update k to 8');
+    assert(sB.changed == 1, 'scale should report one change');
+    pB(ki).locked = true;
+    pB(ki).newValue = pB(ki).value;
+    [pB, sB] = mps.bulkEdit(pB, ki, 'set', '10');
+    assert(sB.skippedLocked == 1, 'locked parameter should be skipped');
+    [pB, ~] = mps.bulkEdit(pB, ki, 'unlock', '');
+    [pB, sB] = mps.applyPastedValues(pB, ki, {'3.5'});
+    assert(strcmp(pB(ki).newValue, '3.5'), 'pasted value should be applied');
+    assert(sB.changed == 1, 'paste should report one change');
+    [pB, sB] = mps.bulkEdit(pB, ki, 'useoff', '');
+    assert(~pB(ki).use && sB.changed == 1, 'useoff should clear use');
+
+    dlgB = mps.BulkEditDialog(pB, ki, 1:numel(pB), 'Visible', 'off');
+    dlgB.setScope('selected');
+    dlgB.setOperation('scale');
+    dlgB.setValue('2');
+    dlgB.apply();
+    resB = dlgB.Result;
+    delete(dlgB);
+    assert(isfield(resB, 'op') && strcmp(resB.op, 'scale'), ...
+        'bulk dialog should return the selected operation');
+    assert(isequal(resB.indices, ki), 'bulk dialog target row mismatch');
+    fprintf('  bulk edit: ok\n');
+
+    % --- 15. Sweep metrics + summary CSV ---------------------------------
+    metrics = mps.sweepMetrics(sweepResults, 't', {'y'});
+    assert(~isempty(metrics), 'sweep metrics should not be empty');
+    assert(any(~isnan([metrics.finalValue])), ...
+        'sweep metrics should include curve values');
+    [sweepReport2, metricsCsv] = mps.writeSweepReport(sweepRoot, demo, ...
+        sweepNames, sweepValues, sweepScen, sweepResults, '', metrics);
+    assert(isfile(sweepReport2), 'sweep report should be rewritten');
+    assert(isfile(metricsCsv), 'sweep summary CSV missing');
+    assert(contains(fileread(sweepReport2), '结果指标'), ...
+        'sweep report missing metrics section');
+    assert(contains(fileread(metricsCsv), 'rms'), ...
+        'sweep CSV missing rms column');
+    fprintf('  sweep metrics: ok\n');
+
+    % --- 16. Run history + load parameters -------------------------------
+    histRoot = fullfile(tempdir, 'mps_history_test');
+    if isfolder(histRoot)
+        rmdir(histRoot, 's');
+    end
+    mkdir(histRoot);
+    wsData = struct('t', (0:0.1:1)', 'y', (0:0.1:1)');
+    for hr = 1:2
+        runDir = fullfile(histRoot, sprintf('20261019_12000%d', hr));
+        mkdir(runDir);
+        pH = mps.scan(demo);
+        for hk = 1:numel(pH)
+            if strcmp(pH(hk).name, 'k')
+                pH(hk).newValue = num2str(4 * hr);
+                pH(hk).use = true;
+            end
+        end
+        rH = struct();
+        rH.ok = true;
+        rH.error = '';
+        rH.figures = struct('path', {}, 'title', {}, 'figFile', {});
+        rH.workspace = mps.summarizeWorkspace(wsData);
+        rH.workspaceData = wsData;
+        rH.log = '';
+        rH.scriptPath = fullfile(runDir, 'run_script.m');
+        rH.matFile = fullfile(runDir, 'workspace.mat');
+        rH.elapsedSeconds = hr * 0.5;
+        mps.writeReport(runDir, demo, pH, rH);
+        save(fullfile(runDir, 'workspace.mat'), '-struct', 'wsData');
+    end
+    history = mps.listRuns(histRoot, 'SourceFile', demo);
+    assert(numel(history) == 2, 'history should list two runs');
+    assert(all([history.canLoad]), 'history runs should be loadable');
+    assert(all([history.canCompare]), 'history runs should be comparable');
+    assert(~isempty(strfind(history(1).paramSummary, 'k=')), ...
+        'history summary should mention changed k');
+
+    [histValues, histMeta] = mps.loadRunParameters(history(1).path);
+    assert(numel(histValues) == numel(pH), ...
+        'history should load every parameter record');
+    assert(strcmpi(histMeta.sourceFile, demo), ...
+        'history metadata should keep the source file');
+    presetH = struct('name', 'history', 'values', histValues);
+    [pHist, statsH] = mps.applyPreset(mps.scan(demo), presetH);
+    assert(statsH.matched == numel(histValues), ...
+        'history values should apply to a fresh scan');
+    assert(strcmp(pHist(find(strcmp({pHist.name}, 'k'), 1)).newValue, ...
+        '4') || strcmp(pHist(find(strcmp({pHist.name}, 'k'), 1)).newValue, ...
+        '8'), 'history preset should restore a swept value');
+
+    histDlg = mps.RunHistoryDialog(histRoot, 'SourceFile', demo, ...
+        'CurrentOutDir', history(1).path, 'Visible', 'off');
+    assert(histDlg.runCount() == 2, 'history dialog should show both runs');
+    delete(histDlg);
+    fprintf('  run history: ok\n');
+
+    % --- 17. Duplicate parameter names in compare ------------------------
+    dupRoot = fullfile(tempdir, 'mps_dup_compare');
+    if isfolder(dupRoot)
+        rmdir(dupRoot, 's');
+    end
+    dupA = fullfile(dupRoot, 'a');
+    dupB = fullfile(dupRoot, 'b');
+    mkdir(dupA);
+    mkdir(dupB);
+    dupRecords = @(v1, v2) [ ...
+        struct('name', 'switch_time', 'line', 10, 'value', '1', ...
+        'newValue', v1, 'use', true, 'locked', false), ...
+        struct('name', 'switch_time', 'line', 20, 'value', '3', ...
+        'newValue', v2, 'use', true, 'locked', false)];
+    fid = fopen(fullfile(dupA, 'parameters.json'), 'w', 'n', 'UTF-8');
+    fprintf(fid, '%s', jsonencode(dupRecords('2', '4')));
+    fclose(fid);
+    fid = fopen(fullfile(dupB, 'parameters.json'), 'w', 'n', 'UTF-8');
+    fprintf(fid, '%s', jsonencode(dupRecords('2', '9')));
+    fclose(fid);
+    mps.compareRuns(dupA, dupB, fullfile(dupB, 'compare.html'));
+    cmp = jsondecode(fileread(fullfile(dupB, 'compare.json')));
+    assert(numel(cmp.parameterDiffs) == 2, ...
+        'duplicate names on different lines must stay separate');
+    assert(any([cmp.parameterDiffs.lineA] == 10) && ...
+        any([cmp.parameterDiffs.lineA] == 20), ...
+        'compare should report the original line numbers');
+    rmdir(dupRoot, 's');
+    fprintf('  duplicate-name compare: ok\n');
+
+    % --- 18. App UI construction -----------------------------------------
+    app = mps.App('Visible', 'off');
+    app.loadFile(demo);
+    assert(~isempty(app.Params), 'app should load the demo parameters');
+    delete(app);
+    fprintf('  app UI: ok\n');
 
     fprintf('ALL TESTS PASSED\n');
 end

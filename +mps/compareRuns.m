@@ -40,21 +40,36 @@ function reportPath = compareRuns(dirA, dirB, outPath)
     figB = listFigures(dirB);
 
     % --- Parameter comparison -------------------------------------------
-    namesA = {pA.name};
-    namesB = {pB.name};
-    allNames = unique([namesA, namesB], 'stable');
-    paramDiffs = struct('name', {}, 'valueA', {}, 'valueB', {}, ...
-        'changed', {}, 'only', {});
+    % Match by name + line, not name alone: a script may contain two
+    % parameters with the same name on different lines.
+    keysA = parameterKeys(pA);
+    keysB = parameterKeys(pB);
+    allKeys = unique([keysA, keysB], 'stable');
+    paramDiffs = struct('name', {}, 'lineA', {}, 'lineB', {}, ...
+        'valueA', {}, 'valueB', {}, 'changed', {}, 'only', {});
     nChanged = 0;
-    for k = 1:numel(allNames)
-        name = allNames{k};
-        ia = find(strcmp(namesA, name), 1);
-        ib = find(strcmp(namesB, name), 1);
+    for k = 1:numel(allKeys)
+        key = allKeys{k};
+        ia = find(strcmp(keysA, key), 1);
+        ib = find(strcmp(keysB, key), 1);
+        name = '';
+        lineA = NaN;
+        lineB = NaN;
         vA = '';
         vB = '';
         only = '';
-        if ~isempty(ia), vA = effectiveValue(pA(ia)); end
-        if ~isempty(ib), vB = effectiveValue(pB(ib)); end
+        if ~isempty(ia)
+            name = pA(ia).name;
+            lineA = pA(ia).line;
+            vA = effectiveValue(pA(ia));
+        end
+        if ~isempty(ib)
+            if isempty(name)
+                name = pB(ib).name;
+            end
+            lineB = pB(ib).line;
+            vB = effectiveValue(pB(ib));
+        end
         if isempty(ia)
             only = 'B';
         elseif isempty(ib)
@@ -62,8 +77,9 @@ function reportPath = compareRuns(dirA, dirB, outPath)
         end
         changed = ~strcmp(vA, vB);
         if changed, nChanged = nChanged + 1; end
-        paramDiffs(end+1) = struct('name', name, 'valueA', vA, ...
-            'valueB', vB, 'changed', changed, 'only', only); %#ok<AGROW>
+        paramDiffs(end+1) = struct('name', name, 'lineA', lineA, ...
+            'lineB', lineB, 'valueA', vA, 'valueB', vB, ...
+            'changed', changed, 'only', only); %#ok<AGROW>
     end
 
     % --- Workspace comparison -------------------------------------------
@@ -173,7 +189,7 @@ function reportPath = compareRuns(dirA, dirB, outPath)
     if isempty(paramDiffs)
         out{end+1} = '<p class="muted">两次运行都没有参数记录。</p>';
     else
-        out{end+1} = '<table><thead><tr><th>参数</th><th>A 运行值</th><th>B 运行值</th><th>说明</th></tr></thead><tbody>';
+        out{end+1} = '<table><thead><tr><th>参数</th><th>行 (A / B)</th><th>A 运行值</th><th>B 运行值</th><th>说明</th></tr></thead><tbody>';
         for k = 1:numel(paramDiffs)
             d = paramDiffs(k);
             rowClass = '';
@@ -188,8 +204,9 @@ function reportPath = compareRuns(dirA, dirB, outPath)
             else
                 note = '相同';
             end
-            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
-                rowClass, htmlEscape(d.name), htmlEscape(d.valueA), ...
+            out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s / %s</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
+                rowClass, htmlEscape(d.name), fmtLine(d.lineA), ...
+                fmtLine(d.lineB), htmlEscape(d.valueA), ...
                 htmlEscape(d.valueB), note); %#ok<AGROW>
         end
         out{end+1} = '</tbody></table>';
@@ -270,8 +287,8 @@ end
 
 % -------------------------------------------------------------------------
 function p = loadParams(dir)
-    p = struct('name', {}, 'value', {}, 'newValue', {}, 'use', {}, ...
-        'locked', {});
+    p = struct('name', {}, 'line', {}, 'value', {}, 'newValue', {}, ...
+        'use', {}, 'locked', {});
     f = fullfile(dir, 'parameters.json');
     if ~isfile(f)
         return;
@@ -287,6 +304,7 @@ function p = loadParams(dir)
     for k = 1:numel(raw)
         item = struct();
         item.name = charField(raw(k), 'name');
+        item.line = numberField(raw(k), 'line');
         item.value = charField(raw(k), 'value');
         item.newValue = charField(raw(k), 'newValue');
         item.use = logicalField(raw(k), 'use');
@@ -316,6 +334,38 @@ function v = logicalField(s, name)
         if islogical(x) || isnumeric(x)
             v = logical(x(1));
         end
+    end
+end
+
+% -------------------------------------------------------------------------
+function v = numberField(s, name)
+    v = NaN;
+    if isfield(s, name)
+        x = s.(name);
+        if isnumeric(x) && isscalar(x)
+            v = double(x);
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function keys = parameterKeys(p)
+    keys = cell(1, numel(p));
+    for k = 1:numel(p)
+        if isnan(p(k).line)
+            keys{k} = p(k).name;
+        else
+            keys{k} = sprintf('%s|%d', p(k).name, p(k).line);
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function s = fmtLine(v)
+    if isempty(v) || isnan(v)
+        s = '-';
+    else
+        s = sprintf('%d', v);
     end
 end
 
