@@ -416,8 +416,9 @@ demo/demo_simulation.m       弹簧-阻尼示例
 demo/relative_demo.m         相对路径加载示例
 tests/run_tests.m            测试入口（fixture/清理）
 tests/test_*.m               按功能拆分的测试脚本
-tests/README.md              本地测试、PCT 与 self-hosted CI 说明
-.github/workflows/matlab-tests.yml  MATLAB self-hosted CI
+tests/README.md              本地测试、PCT、预检查与日志说明
++mps/preflight.m             本地预检查（环境检查 + 可选完整测试 + 日志）
++mps/checkEnvironment.m      只读环境检查
 ```
 
 ## 测试
@@ -435,7 +436,15 @@ run_tests
 matlab -batch "addpath('tests'); run_tests"
 ```
 
-测试按功能拆在 `tests/test_*.m`，`run_tests.m` 只负责共享 fixture 和清理；PCT 测试在无许可证时自动跳过，结束时关闭测试创建的并行池。CI 使用 self-hosted Windows MATLAB runner，配置见 `.github/workflows/matlab-tests.yml` 和 `tests/README.md`。
+测试按功能拆在 `tests/test_*.m`，`run_tests.m` 只负责共享 fixture 和清理；PCT 测试在无许可证时自动跳过，结束时关闭测试创建的并行池。
+
+发布前或怀疑环境有问题时，运行本地预检查：
+
+```matlab
+mps.preflight()
+```
+
+它会检查 MATLAB 版本、临时目录写权限、演示脚本和必要函数，再运行完整测试，并把结果写入 `logs/preflight_*.log`（已加入 `.gitignore`）。不需要 GitHub、runner 或网络；只检查本机环境，不会执行远程代码。
 
 测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、复用图窗捕获、报告生成、多行嵌套 `struct`、`% @param` / `% @ignore` 标记、手动参数、AI 注释模板与导入、锁定参数、运行对比、参数集预设、批量扫描、函数文件扫描、批量修改/粘贴、扫参指标与 CSV、运行历史与历史参数载入、运行大小统计、交互调用检测、扫参取消、并行扫参与后台运行（有 PCT 时）、工作区捕获预算、撤销/重做、会话恢复、保存前 diff、源文件指纹、懒加载工作区、项目扫描、多文件项目执行器、项目扫参、影子目录复用/删除同步/过期清理、结果/保存/参数表控制器构建、界面构建。
 

@@ -4,4 +4,4 @@ mps_run_*.m
 *_manual.json
 *.asv
 *.autosave
-matlab-tests.log
+logs/

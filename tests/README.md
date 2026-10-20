@@ -45,16 +45,25 @@ licensed, the suite creates a small adaptive pool (normally 2 workers for the
 2-scenario test) and stops it before `test_app` finishes. A pool that already
 existed before the test run is left alone.
 
-## CI
+## Preflight and logs
 
-`.github/workflows/matlab-tests.yml` expects a self-hosted Windows runner with:
+Before a release, or when a machine behaves differently, run:
 
-- labels `self-hosted`, `Windows`, `matlab`
-- `matlab.exe` available on `PATH`
-- the repository checked out by `actions/checkout`
-- optionally a PCT license for the parallel section
+```matlab
+mps.preflight
+```
 
-The workflow uploads `matlab-tests.log` even when the tests fail.
+This checks the local MATLAB version, writable temp directory, demo script and
+required UI functions, then runs the full suite. It writes a timestamped log to
+`logs/preflight_*.log` (gitignored).
+
+```matlab
+mps.preflight('Full', false)   % environment check only
+mps.checkEnvironment           % read-only environment report
+```
+
+Everything is local. There is no self-hosted runner, no GitHub-specific
+execution and no network access.
 
 ## Adding tests
 

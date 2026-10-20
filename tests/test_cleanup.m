@@ -47,4 +47,14 @@
     mps.logWarning('测试日志', 'expected warning', 'Silent', true);
     assert(isfile(fullfile(tempdir, 'matlab_parameter_studio.log')), ...
         'logWarning should write a log file');
+    preflightDir = fullfile(tempdir, 'mps_preflight_test');
+    if isfolder(preflightDir)
+        rmdir(preflightDir, 's');
+    end
+    pre = mps.preflight('Full', false, 'LogDir', preflightDir);
+    assert(pre.ok, pre.error);
+    assert(isfile(pre.logFile), 'preflight should write a timestamped log');
+    if isfolder(preflightDir)
+        rmdir(preflightDir, 's');
+    end
     fprintf('  shadow sync + cleanup: ok\n');

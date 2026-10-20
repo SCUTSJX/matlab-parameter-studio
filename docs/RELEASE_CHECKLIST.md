@@ -2,15 +2,19 @@
 
 ## Automated
 
-```bat
-matlab -batch "addpath('tests'); run_tests"
+```matlab
+mps.preflight()
 ```
 
+`mps.preflight` checks the local environment, runs the full suite and writes a
+timestamped log under `logs/`. For an environment-only check use
+`mps.preflight('Full', false)`.
+
+- environment check passes;
 - all tests pass;
 - no `MATLAB` / `MATLABWindow` processes remain afterwards;
 - a test-created parallel pool is stopped;
-- CI workflow `MATLAB tests` is green (or the same command has been run on
-  the self-hosted runner).
+- the preflight log exists in `logs/`.
 
 ## Manual smoke test
 
