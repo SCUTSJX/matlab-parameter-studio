@@ -121,23 +121,26 @@ classdef BackgroundRunManager < handle
             if ~any(strcmp(state, {'finished', 'cancelled'}))
                 return;
             end
-            if obj.Canceled
-                if obj.TimedOut
-                    msg = sprintf('后台运行超时（%d s），已取消。', ...
-                        obj.TimeoutSeconds);
-                else
-                    msg = '后台运行已取消。';
+            if strcmp(state, 'finished')
+                % The run completed, possibly in the same poll cycle that a
+                % cancel request or timeout was registered.  Deliver the
+                % results instead of throwing them away.
+                try
+                    out = fetchOutputs(obj.Future);
+                catch err
+                    obj.finish([], err.message);
+                    return;
                 end
-                obj.finish([], msg);
+                obj.finish(out, '');
                 return;
             end
-            try
-                out = fetchOutputs(obj.Future);
-            catch err
-                obj.finish([], err.message);
-                return;
+            if obj.TimedOut
+                msg = sprintf('后台运行超时（%d s），已取消。', ...
+                    obj.TimeoutSeconds);
+            else
+                msg = '后台运行已取消。';
             end
-            obj.finish(out, '');
+            obj.finish([], msg);
         end
 
         function setProgress(obj, message)
