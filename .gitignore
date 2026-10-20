@@ -5,6 +5,7 @@ mps_sweep_*.m
 *_session.json
 *_manual.json
 logs/
+dist/
 
 # Generated tuning/export files (force-add if you want to version them)
 *_tuned.m
