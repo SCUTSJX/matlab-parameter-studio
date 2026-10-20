@@ -14,8 +14,11 @@ function shadowRoot = prepareShadowProject(projectRoot)
     if isKey(shadows, key) && isfolder(shadows(key))
         shadowRoot = shadows(key);
     else
+        % Parallel workers on one machine share tempdir.  Including the
+        % process id keeps each worker's shadow independent, otherwise one
+        % worker's sync/rewrite would race another worker's running copy.
         shadowRoot = fullfile(tempdir, ...
-            ['mps_shadow_' shortHash(key)]);
+            sprintf('mps_shadow_%s_%d', shortHash(key), feature('getpid')));
         if isfolder(shadowRoot)
             try
                 rmdir(shadowRoot, 's');
