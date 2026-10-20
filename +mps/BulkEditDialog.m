@@ -52,12 +52,10 @@ classdef BulkEditDialog < handle
             dlg.SelectedIdx = double(selectedIdx(:)');
             dlg.VisibleIdx = double(visibleIdx(:)');
             dlg.createUI();
-            if strcmpi(visible, 'off')
-                dlg.UIFigure.Visible = 'off';
-            end
             dlg.refreshScopeItems();
             dlg.updateUI();
             dlg.UIFigure.UserData = dlg;
+            dlg.UIFigure.Visible = visible;
         end
 
         function delete(dlg)
@@ -118,7 +116,7 @@ classdef BulkEditDialog < handle
         % -----------------------------------------------------------------
         function createUI(dlg)
             dlg.UIFigure = uifigure('Name', '批量修改参数', ...
-                'Position', [320 220 640 380]);
+                'Position', [320 220 640 380], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
             catch

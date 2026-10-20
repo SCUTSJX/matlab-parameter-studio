@@ -9,7 +9,7 @@ function h = buildAppUI(cb)
     h = struct();
 
     h.UIFigure = uifigure('Name', 'MATLAB Parameter Studio', ...
-        'Position', [80 60 1340 840]);
+        'Position', [80 60 1340 840], 'Visible', 'off');
     try
         h.UIFigure.Theme = 'light';   % R2025a+
     catch

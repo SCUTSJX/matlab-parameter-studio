@@ -85,10 +85,8 @@ classdef App < handle
                 @(message) app.backgroundProgress(message);
             app.BackgroundMgr.FinishedFcn = ...
                 @(out, message) app.backgroundFinished(out, message);
-            if strcmpi(visible, 'off')
-                app.UIFigure.Visible = 'off';
-            end
             app.UIFigure.UserData = app;
+            app.UIFigure.Visible = visible;
         end
 
         function delete(app)

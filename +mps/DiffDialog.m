@@ -23,10 +23,8 @@ classdef DiffDialog < handle
                 end
             end
             dlg.createUI(title, diffLines);
-            if strcmpi(visible, 'off')
-                dlg.UIFigure.Visible = 'off';
-            end
             dlg.UIFigure.UserData = dlg;
+            dlg.UIFigure.Visible = visible;
         end
 
         function delete(dlg)
@@ -53,7 +51,7 @@ classdef DiffDialog < handle
     methods (Access = private)
         function createUI(dlg, title, diffLines)
             dlg.UIFigure = uifigure('Name', '保存前确认', ...
-                'Position', [260 140 900 620]);
+                'Position', [260 140 900 620], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
             catch

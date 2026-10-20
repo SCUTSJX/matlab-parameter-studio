@@ -47,11 +47,9 @@ classdef SweepDialog < handle
             dlg.Workspace = workspace;
             dlg.SweepText = repmat({''}, numel(params), 1);
             dlg.createUI();
-            if strcmpi(visible, 'off')
-                dlg.UIFigure.Visible = 'off';
-            end
             dlg.refreshTable();
             dlg.UIFigure.UserData = dlg;
+            dlg.UIFigure.Visible = visible;
         end
 
         function delete(dlg)
@@ -84,7 +82,7 @@ classdef SweepDialog < handle
         % -----------------------------------------------------------------
         function createUI(dlg)
             dlg.UIFigure = uifigure('Name', '批量扫描', ...
-                'Position', [220 120 880 660]);
+                'Position', [220 120 880 660], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
             catch

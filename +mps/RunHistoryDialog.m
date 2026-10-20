@@ -57,11 +57,9 @@ classdef RunHistoryDialog < handle
             end
             dlg.Root = char(root);
             dlg.createUI();
-            if strcmpi(visible, 'off')
-                dlg.UIFigure.Visible = 'off';
-            end
             dlg.refresh();
             dlg.UIFigure.UserData = dlg;
+            dlg.UIFigure.Visible = visible;
         end
 
         function delete(dlg)
@@ -125,7 +123,7 @@ classdef RunHistoryDialog < handle
         % -----------------------------------------------------------------
         function createUI(dlg)
             dlg.UIFigure = uifigure('Name', '运行历史', ...
-                'Position', [240 140 1000 620]);
+                'Position', [240 140 1000 620], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
             catch
