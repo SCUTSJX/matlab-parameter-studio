@@ -29,6 +29,7 @@ classdef SweepRunner < handle
         SaveFigFiles = false
         FigureResolution = 150
         MaxScenarios = 24
+        NumWorkers = 0
         Parallel = false
         Progress = @(fraction, message) []
         ShouldCancel = @() false
@@ -241,7 +242,11 @@ classdef SweepRunner < handle
             obj.Progress(0, '启动并行池...');
             pool = gcp('nocreate');
             if isempty(pool)
-                pool = parpool('Processes');
+                if obj.NumWorkers > 0
+                    pool = parpool('Processes', obj.NumWorkers);
+                else
+                    pool = parpool('Processes');
+                end
             end
             root = fileparts(fileparts(which('mps.SweepRunner')));
             try

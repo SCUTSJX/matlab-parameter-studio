@@ -18,6 +18,8 @@ classdef App < handle
         LazyWorkspaceMB = 32
         SaveFigFiles = false
         FigureResolution = 150
+        NumWorkers = 0          % 0 = let MATLAB choose
+        KeepParallelPool = false
         RunTimeoutSeconds = 0   % 0 = no timeout
     end
 
@@ -60,6 +62,7 @@ classdef App < handle
         BackgroundCanceled = false
         BackgroundTimedOut = false
         BackgroundStartedAt = 0
+        BackgroundCreatedPool = false
         SweepStartedAt = 0
     end
 
@@ -1030,8 +1033,13 @@ classdef App < handle
             try
                 app.setBackgroundProgress('启动并行池...');
                 pool = gcp('nocreate');
+                app.BackgroundCreatedPool = isempty(pool);
                 if isempty(pool)
-                    pool = parpool('Processes');
+                    if app.NumWorkers > 0
+                        pool = parpool('Processes', app.NumWorkers);
+                    else
+                        pool = parpool('Processes');
+                    end
                 end
                 root = fileparts(fileparts(which('mps.App')));
                 try
@@ -1203,6 +1211,13 @@ classdef App < handle
             app.BackgroundFuture = [];
             app.BackgroundCanceled = false;
             app.BackgroundTimedOut = false;
+            if app.BackgroundCreatedPool && ~app.KeepParallelPool
+                try
+                    delete(gcp('nocreate'));
+                catch
+                end
+            end
+            app.BackgroundCreatedPool = false;
         end
 
         function cancelBackgroundRun(app)
@@ -1607,6 +1622,7 @@ classdef App < handle
             oldHV = app.UIFigure.HandleVisibility;
             app.UIFigure.HandleVisibility = 'off';
             cleanupObj = onCleanup(@() app.finishSweep(d, oldHV)); %#ok<NASGU>
+            hadPool = ~isempty(gcp('nocreate'));
 
             try
                 runner = mps.SweepRunner(app.SourceFile, app.Params, ...
@@ -1617,6 +1633,7 @@ classdef App < handle
                 runner.LazyWorkspaceMB = app.LazyWorkspaceMB;
                 runner.SaveFigFiles = app.SaveFigFiles;
                 runner.FigureResolution = app.FigureResolution;
+                runner.NumWorkers = app.NumWorkers;
                 runner.MaxScenarios = maxScenarios;
                 runner.ProjectMode = app.ProjectMode;
                 runner.EntryFile = app.EntryFile;
@@ -1665,6 +1682,12 @@ classdef App < handle
                 app.StatusLabel.Text = ['批量扫描失败：' err.message];
                 uialert(app.UIFigure, err.message, '批量扫描失败', ...
                     'Icon', 'error');
+            end
+            if ~hadPool && ~app.KeepParallelPool
+                try
+                    delete(gcp('nocreate'));
+                catch
+                end
             end
             clear cleanupObj;
         end
