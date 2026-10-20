@@ -18,7 +18,9 @@ classdef App < handle
         LazyWorkspaceMB = 32
         SaveFigFiles = false
         FigureResolution = 150
-        NumWorkers = 0          % 0 = let MATLAB choose
+        NumWorkers = 0          % 0 = auto: conservative, capped by MaxWorkers
+        MaxWorkers = 4
+        BackgroundWorkers = 1
         KeepParallelPool = false
         RunTimeoutSeconds = 0   % 0 = no timeout
     end
@@ -1035,11 +1037,9 @@ classdef App < handle
                 pool = gcp('nocreate');
                 app.BackgroundCreatedPool = isempty(pool);
                 if isempty(pool)
-                    if app.NumWorkers > 0
-                        pool = parpool('Processes', app.NumWorkers);
-                    else
-                        pool = parpool('Processes');
-                    end
+                    % A single background run only occupies one worker.
+                    % Large pools are reserved for explicitly parallel sweeps.
+                    pool = parpool('Processes', max(1, app.BackgroundWorkers));
                 end
                 root = fileparts(fileparts(which('mps.App')));
                 try
@@ -1634,6 +1634,7 @@ classdef App < handle
                 runner.SaveFigFiles = app.SaveFigFiles;
                 runner.FigureResolution = app.FigureResolution;
                 runner.NumWorkers = app.NumWorkers;
+                runner.MaxWorkers = app.MaxWorkers;
                 runner.MaxScenarios = maxScenarios;
                 runner.ProjectMode = app.ProjectMode;
                 runner.EntryFile = app.EntryFile;

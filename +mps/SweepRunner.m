@@ -30,6 +30,7 @@ classdef SweepRunner < handle
         FigureResolution = 150
         MaxScenarios = 24
         NumWorkers = 0
+        MaxWorkers = 4
         Parallel = false
         Progress = @(fraction, message) []
         ShouldCancel = @() false
@@ -65,7 +66,8 @@ classdef SweepRunner < handle
 
             total = numel(scenarios);
             canceled = false;
-            if obj.Parallel && license('test', 'Distrib_Computing_Toolbox')
+            if obj.Parallel && total > 1 && ...
+                    license('test', 'Distrib_Computing_Toolbox')
                 try
                     [results, canceled] = obj.runParallel(sweepRoot, scenarios);
                 catch err
@@ -239,14 +241,16 @@ classdef SweepRunner < handle
                 return;
             end
 
-            obj.Progress(0, '启动并行池...');
+            workers = mps.autoWorkerCount(total, obj.NumWorkers, ...
+                obj.MaxWorkers);
+            if workers <= 1
+                [results, canceled] = obj.runSerial(sweepRoot, scenarios);
+                return;
+            end
+            obj.Progress(0, sprintf('启动并行池（%d workers）...', workers));
             pool = gcp('nocreate');
             if isempty(pool)
-                if obj.NumWorkers > 0
-                    pool = parpool('Processes', obj.NumWorkers);
-                else
-                    pool = parpool('Processes');
-                end
+                pool = parpool('Processes', workers);
             end
             root = fileparts(fileparts(which('mps.SweepRunner')));
             try

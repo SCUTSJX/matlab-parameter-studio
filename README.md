@@ -175,7 +175,7 @@ AI 返回的格式很宽松，以下几种都支持：
   - 离散值：`1,2,4` 或 `0.5 0.75 1`；
   - 冒号范围：`1:0.5:5`、`1:2:9`；
   - 多个参数会做笛卡尔积，右上角实时显示预计组数；组数上限可在右上角调整（默认 24，最大 500，防止误填出几百次运行）。
-  - 装有 Parallel Computing Toolbox 时，可以勾选“并行运行”把各场景分配到并行池；并行模式只把选中的 X/Y 曲线带回界面，大工作区留在 worker 上。
+  - 装有 Parallel Computing Toolbox 时，可以勾选“并行运行”把各场景分配到并行池；默认按场景数/CPU/可用内存自动选较少 worker（最多 4），单次后台运行只用 1 个，只有显式设置 `app.NumWorkers = 8` 才会开 8 个；并行模式只把选中的 X/Y 曲线带回界面，大工作区留在 worker 上。
 - 勾选“叠加曲线”后，从上次运行的工作区里选 X/Y 变量（例如 `t` 与 `y`），扫描结束会把每组曲线画在同一张图上。
 - 叠加图会带图例，直接标出每条曲线对应的参数组合（例如 `k=8, c=0.5`），不用再靠颜色猜。
 - 选择 X/Y 后还会自动计算每组的通用指标：最小值、最大值、末值、绝对峰值、RMS、峰值时刻；报告里新增“结果指标”表，并生成 `sweep_summary.csv`，可以直接在 Excel 里排序/画图。
@@ -259,10 +259,15 @@ mps.compareRuns('...\parameter_studio_runs\20261019_170000', ...
 - 一次运行会把所有文件的修改应用到临时副本，再运行入口脚本；
 - 同一个项目/worker 的临时副本会复用，后续运行只同步变化的 `.m` 和输入文件，不再重复复制整个项目；
 - 项目模式也支持并行批量扫描：每个场景在独立 worker 上使用影子项目运行，适合大项目扫参；
-- 后台/扫参使用并行池时，可以限制 worker 数并在结束后自动回收：
+- 默认自动选择较少 worker：最多 `MaxWorkers`（默认 4），并且不超过场景数、CPU 核数和可用内存估算；场景只有 1~2 个时不会启动 8 个 worker；
+- 单次后台运行默认只用 1 个 worker，避免一个任务占满整个并行池；
+- 确实需要更多 worker 时再显式设置，用完自动回收：
   ```matlab
-  app.NumWorkers = 4;
-  app.KeepParallelPool = false;  % 用完关闭，避免常驻进程
+  app.NumWorkers = 0;             % 0 = 自动（推荐）
+  app.MaxWorkers = 4;             % 自动模式下最多 4 个
+  app.BackgroundWorkers = 1;      % 单次后台运行只占 1 个
+  app.KeepParallelPool = false;   % 用完关闭，避免常驻进程
+  % app.NumWorkers = 8;           % 只有确实需要时才手动开 8 个
   ```
 
 ### 配置函数 / 项目入口
@@ -352,6 +357,7 @@ install.m                    安装/加入 MATLAB path
 +mps/backgroundRun.m         后台单次运行的 worker 入口
 +mps/backgroundProjectRun.m  后台项目运行的 worker 入口
 +mps/SweepRunner.m           批量扫描执行器（组合/叠图/指标/报告）
++mps/autoWorkerCount.m       按场景/CPU/内存自动选择保守 worker 数
 +mps/runSweepScenario.m      并行扫参的单个 worker 入口
 +mps/ParameterTableController.m 参数表/选择/批量修改/撤销/会话
 +mps/ResultsController.m     结果图/工作区/绘图/CSV 控制器
