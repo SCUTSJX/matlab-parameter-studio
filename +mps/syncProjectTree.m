@@ -140,6 +140,7 @@ function pruneEmptyFolders(root, current, excluded)
                     rmdir(child);
                 end
             catch
+                % 目录非空或正被占用时保留
             end
         end
     end

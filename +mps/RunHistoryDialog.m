@@ -109,7 +109,8 @@ classdef RunHistoryDialog < handle
                 dlg.SelectedRun = 1;
                 try
                     dlg.Table.Selection = [1 1];
-                catch
+                catch err
+                    mps.logWarning('设置运行历史默认选中行', err, 'Silent', true);
                 end
             end
             dlg.chooseDefaults();
@@ -126,7 +127,8 @@ classdef RunHistoryDialog < handle
                 'Position', [240 140 1000 620], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
-            catch
+            catch err
+                mps.logWarning('设置运行历史窗口主题', err, 'Silent', true);
             end
             dlg.UIFigure.CloseRequestFcn = @(s, e) dlg.delete();
 
@@ -155,11 +157,13 @@ classdef RunHistoryDialog < handle
             dlg.Table.Layout.Row = 2;
             try
                 dlg.Table.Multiselect = 'off';
-            catch
+            catch err
+                mps.logWarning('关闭运行历史表多选', err, 'Silent', true);
             end
             try
                 dlg.Table.DoubleClickedFcn = @(s, e) dlg.onOpenReport();
-            catch
+            catch err
+                mps.logWarning('设置运行历史表双击回调', err, 'Silent', true);
             end
 
             dlg.StatusLabel = uilabel(root, 'Text', '', ...
@@ -213,7 +217,8 @@ classdef RunHistoryDialog < handle
                 if ~isempty(selection)
                     rows = unique(selection(:, 1));
                 end
-            catch
+            catch err
+                mps.logWarning('读取运行历史选中行', err, 'Silent', true);
             end
             if isempty(rows) && isstruct(event) && isfield(event, 'Indices') ...
                     && ~isempty(event.Indices)

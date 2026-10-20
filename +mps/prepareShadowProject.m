@@ -50,6 +50,7 @@ function touchFolder(path)
             fprintf(fid, '%s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS.FFF'));
             fclose(fid);
         end
-    catch
+    catch err
+        mps.logWarning('更新影子目录时间戳', err, 'Silent', true);
     end
 end

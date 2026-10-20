@@ -23,7 +23,8 @@ function [values, meta] = loadRunParameters(runPath)
             if isstruct(candidate)
                 meta = candidate;
             end
-        catch
+        catch err
+            mps.logWarning('读取运行元数据', err);
         end
     end
 

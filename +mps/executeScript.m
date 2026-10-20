@@ -107,5 +107,6 @@ function cleanupCaptureLimits()
             rmappdata(0, 'mpsCaptureLimits');
         end
     catch
+        % 清理失败不影响主流程
     end
 end

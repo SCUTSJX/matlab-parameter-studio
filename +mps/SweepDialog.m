@@ -85,7 +85,8 @@ classdef SweepDialog < handle
                 'Position', [220 120 880 660], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
-            catch
+            catch err
+                mps.logWarning('设置批量扫描窗口主题', err, 'Silent', true);
             end
             root = uigridlayout(dlg.UIFigure, [5 1]);
             root.RowHeight = {30, 30, '1x', 130, 36};

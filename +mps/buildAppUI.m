@@ -12,7 +12,8 @@ function h = buildAppUI(cb)
         'Position', [80 60 1340 840], 'Visible', 'off');
     try
         h.UIFigure.Theme = 'light';   % R2025a+
-    catch
+    catch err
+        mps.logWarning('设置主界面主题', err, 'Silent', true);
     end
     h.UIFigure.CloseRequestFcn = @(s, e) cb.onClose();
     h.UIFigure.KeyPressFcn = @(s, e) cb.onKeyPress(e);
@@ -228,13 +229,15 @@ function h = buildAppUI(cb)
     h.Table.Layout.Row = 4;
     try
         h.Table.Multiselect = 'on';   % R2023b+
-    catch
+    catch err
+        mps.logWarning('启用参数表多选', err, 'Silent', true);
     end
     try
         h.Table.Tooltip = ...
             '双击“参数”或“行”列，在 MATLAB 编辑器中打开对应行';
         h.Table.DoubleClickedFcn = @(s, e) cb.onOpenInEditor(e);
-    catch
+    catch err
+        mps.logWarning('设置参数表提示和双击回调', err, 'Silent', true);
     end
 
     sourceGrid = uigridlayout(lg, [1 3]);

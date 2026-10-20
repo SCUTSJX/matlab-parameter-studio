@@ -51,6 +51,7 @@ function data = captureWorkspace(maxVariableMB, maxTotalMB)
             data.(name) = evalin('caller', name);
             totalBytes = totalBytes + bytes;
         catch
+            % 变量可能在读取前被脚本清除，跳过即可
         end
     end
 

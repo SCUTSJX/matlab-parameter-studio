@@ -36,6 +36,7 @@ function info = checkEnvironment(root)
             info.tempWritable = true;
         end
     catch
+        % 探测失败按“临时目录不可写”处理，下面统一提示
     end
     if ~info.tempWritable
         info.messages{end+1} = 'Temporary directory is not writable.';

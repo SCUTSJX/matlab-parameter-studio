@@ -54,7 +54,8 @@ classdef DiffDialog < handle
                 'Position', [260 140 900 620], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
-            catch
+            catch err
+                mps.logWarning('设置保存确认窗口主题', err, 'Silent', true);
             end
             dlg.UIFigure.CloseRequestFcn = @(s, e) dlg.cancel();
 

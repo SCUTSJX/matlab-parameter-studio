@@ -132,5 +132,6 @@ function s = axTitle(ax)
             s = safeString(get(t, 'String'));
         end
     catch
+        % 读不到标题时返回空字符串
     end
 end

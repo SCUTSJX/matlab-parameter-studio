@@ -93,6 +93,7 @@ classdef BackgroundRunManager < handle
                         cancel(obj.Future);
                     end
                 catch
+                    % 对话框可能已关闭；此处取消失败不影响后续轮询
                 end
             end
             if obj.TimeoutSeconds > 0 && ...

@@ -320,7 +320,8 @@ classdef ParameterTableController < handle
                 if ~isempty(selection)
                     rows = unique(selection(:, 1));
                 end
-            catch
+            catch err
+                mps.logWarning('读取参数表选中行', err, 'Silent', true);
             end
             if isempty(rows)
                 rows = unique(event.Indices(:, 1));
@@ -564,7 +565,8 @@ classdef ParameterTableController < handle
                     obj.Table.Selection = [visibleRows(:), ...
                         ones(numel(visibleRows), 1)];
                 end
-            catch
+            catch err
+                mps.logWarning('恢复参数表选中行', err, 'Silent', true);
             end
             obj.updateLockButton();
         end

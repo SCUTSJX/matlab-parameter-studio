@@ -88,6 +88,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
     try
         cd(oldPwd);
     catch
+        % 恢复原工作目录失败不影响运行结果
     end
 
     % Capture figures that appeared during this run, plus existing figures
@@ -113,6 +114,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             [~, order] = sort([newFigs.Number]);
             newFigs = newFigs(order);
         catch
+            % 排序失败时保持原有图窗顺序
         end
     end
     result.figureHandles = newFigs;
@@ -151,6 +153,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             try
                 title = get(f, 'Name');
             catch
+                % 读不到名称时使用默认标题
             end
             if isempty(title)
                 title = sprintf('图 %d', k);
@@ -206,6 +209,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
         try
             cd(oldPwd);
         catch
+            % 恢复原工作目录失败不影响清理
         end
     end
 end

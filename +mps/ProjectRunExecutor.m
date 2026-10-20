@@ -285,6 +285,7 @@ function txt = replaceShadowRoot(txt, shadowRoot, projectRoot)
     try
         txt = strrep(txt, shadowRoot, projectRoot);
     catch
+        % 替换失败时保留原文本
     end
 end
 

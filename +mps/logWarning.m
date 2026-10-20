@@ -45,6 +45,7 @@ function logWarning(context, err, varargin)
         try
             warning('mps:logWarning', '%s：%s', char(context), message);
         catch
+            % 避免日志失败递归调用自身
         end
     end
 
@@ -61,5 +62,6 @@ function logWarning(context, err, varargin)
             fprintf(fid, ': %s\n', message);
         end
     catch
+        % 日志写入失败时不再递归记录
     end
 end

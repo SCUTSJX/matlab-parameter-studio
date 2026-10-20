@@ -276,7 +276,8 @@ classdef SweepRunner < handle
             root = fileparts(fileparts(which('mps.SweepRunner')));
             try
                 wait(parfevalOnAll(pool, @addpath, 0, root));
-            catch
+            catch err
+                mps.logWarning('向并行工作进程添加项目路径', err);
             end
 
             futures = cell(1, total);
@@ -310,7 +311,8 @@ classdef SweepRunner < handle
                 if obj.ShouldCancel()
                     try
                         cancel(futureArray);
-                    catch
+                    catch err
+                        mps.logWarning('取消剩余扫描任务', err, 'Silent', true);
                     end
                     canceled = true;
                     break;
@@ -375,6 +377,7 @@ classdef SweepRunner < handle
                 try
                     delete(tempScript);
                 catch
+                    % 临时脚本可能已被删除，失败不影响主流程
                 end
             end
         end

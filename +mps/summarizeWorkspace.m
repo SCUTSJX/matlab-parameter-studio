@@ -38,6 +38,7 @@ function ws = summarizeWorkspace(S)
                         mx = max(v, [], 'all');
                     end
                 catch
+                    % 无法计算极值时保留空值
                 end
             end
             if isscalar(v)

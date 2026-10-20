@@ -119,7 +119,8 @@ classdef BulkEditDialog < handle
                 'Position', [320 220 640 380], 'Visible', 'off');
             try
                 dlg.UIFigure.Theme = 'light';   % R2025a+
-            catch
+            catch err
+                mps.logWarning('设置批量修改窗口主题', err, 'Silent', true);
             end
             dlg.UIFigure.CloseRequestFcn = @(s, e) dlg.cancel();
 
