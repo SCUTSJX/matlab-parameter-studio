@@ -58,9 +58,9 @@ classdef App < handle
         SourceCtl
         PresetCtl
         AnnotationCtl
+        SweepCtl
         Busy = false
         BackgroundMgr
-        SweepStartedAt = 0
     end
 
     methods
@@ -96,6 +96,19 @@ classdef App < handle
                 app.StatusLabel);
             app.AnnotationCtl.UndoFcn = @() app.pushUndo();
             app.AnnotationCtl.RefreshFcn = @() app.refreshTable();
+            sweepCtx = struct();
+            sweepCtx.App = app;
+            sweepCtx.KeepFiguresCheck = app.KeepFiguresCheck;
+            sweepCtx.LogArea = app.LogArea;
+            sweepCtx.ReportButton = app.ReportButton;
+            sweepCtx.FolderButton = app.FolderButton;
+            sweepCtx.CloseFiguresButton = app.CloseFiguresButton;
+            sweepCtx.CompareButton = app.CompareButton;
+            sweepCtx.StatusLabel = app.StatusLabel;
+            sweepCtx.SetBusyFcn = @(b) app.setBusy(b);
+            sweepCtx.ConfirmFcn = @(label) ...
+                app.confirmInteractiveCalls(label);
+            app.SweepCtl = mps.SweepController(sweepCtx);
             app.UIFigure.UserData = app;
             app.UIFigure.Visible = visible;
         end
@@ -431,28 +444,13 @@ classdef App < handle
             %
             %   app.runSweepWithValues({'k','c'}, {1:2:9, [0.1 0.2]}, ...
             %                          't', {'y'})
-            if ischar(names) || isstring(names)
-                names = cellstr(names);
-            end
-            if isnumeric(valueLists)
-                valueLists = {valueLists};
-            end
-            activeIdx = [];
-            for k = 1:numel(names)
-                idx = find(strcmp({app.Params.name}, names{k}), 1);
-                if isempty(idx)
-                    error('mps:App:paramNotFound', '找不到参数：%s', names{k});
-                end
-                activeIdx(end+1) = idx; %#ok<AGROW>
-            end
-            if nargin < 4 || isempty(xName)
+            if nargin < 4
                 xName = '';
             end
-            if nargin < 5 || isempty(yNames)
+            if nargin < 5
                 yNames = {};
             end
-            overlay = ~isempty(xName) && ~isempty(yNames);
-            summary = app.runSweep(activeIdx, valueLists, overlay, ...
+            summary = app.SweepCtl.runWithValues(names, valueLists, ...
                 xName, yNames);
         end
     end
@@ -549,7 +547,7 @@ classdef App < handle
             callbacks.onSavePreset = @(s, e) app.PresetCtl.onSave();
             callbacks.onLoadPreset = @(s, e) app.PresetCtl.onLoad();
             callbacks.onDeletePreset = @(s, e) app.PresetCtl.onDelete();
-            callbacks.onOpenSweep = @(s, e) app.onOpenSweep();
+            callbacks.onOpenSweep = @(s, e) app.SweepCtl.onOpen();
             callbacks.onAddManualParam = @(s, e) app.onAddManualParam();
             callbacks.onChooseEntry = @(s, e) app.onChooseEntry();
             callbacks.onCellEdit = @(e) app.onCellEdit([], e);
@@ -1028,34 +1026,6 @@ classdef App < handle
         end
 
         % ---- Batch sweep ------------------------------------------
-        function onOpenSweep(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            if app.IsFunctionFile
-                uialert(app.UIFigure, ...
-                    '这是函数文件，不能直接扫描运行。请打开调用它的脚本。', ...
-                    '无法批量扫描', 'Icon', 'warning');
-                return;
-            end
-            if app.Busy
-                return;
-            end
-            dlg = mps.SweepDialog(app.Params, app.Results.LastWorkspace);
-            uiwait(dlg.UIFigure);
-            result = dlg.Result;
-            delete(dlg);
-            if ~isstruct(result) || ~isfield(result, 'activeIdx') || ...
-                    isempty(result.activeIdx)
-                return;   % cancelled
-            end
-            app.runSweep(result.activeIdx, result.values, ...
-                result.overlay, result.xName, result.yNames, ...
-                result.parallel, result.maxScenarios);
-        end
-
         function onAddManualParam(app)
             if isempty(app.SourceFile)
                 uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
@@ -1131,136 +1101,6 @@ classdef App < handle
                 action, p.name, p.newValue);
         end
 
-        function summary = runSweep(app, activeIdx, values, overlay, ...
-                xName, yNames, parallel, maxScenarios)
-            %RUNSWEEP Execute the cartesian product and build reports.
-            if nargin < 7
-                parallel = false;
-            end
-            if nargin < 8 || isempty(maxScenarios)
-                maxScenarios = 24;
-            end
-            summary = struct('ok', false, 'sweepRoot', '', 'count', 0, ...
-                'report', '', 'overlayPath', '', 'metricsPath', '', ...
-                'canceled', false);
-            if isempty(app.SourceFile) || isempty(activeIdx)
-                return;
-            end
-            if ~app.confirmInteractiveCalls('批量扫描')
-                return;
-            end
-
-            app.setBusy(true);
-            app.SweepStartedAt = tic;
-            if strcmp(app.UIFigure.Visible, 'on')
-                d = uiprogressdlg(app.UIFigure, 'Title', '批量扫描', ...
-                    'Message', '准备...', 'Indeterminate', 'off', ...
-                    'Value', 0, 'Cancelable', 'on', ...
-                    'CancelText', '取消剩余组');
-            else
-                d = [];
-            end
-            oldHV = app.UIFigure.HandleVisibility;
-            app.UIFigure.HandleVisibility = 'off';
-            cleanupObj = onCleanup(@() app.finishSweep(d, oldHV)); %#ok<NASGU>
-            hadPool = ~isempty(gcp('nocreate'));
-
-            try
-                runner = mps.SweepRunner(app.SourceFile, app.Params, ...
-                    activeIdx, values, overlay, xName, yNames, ...
-                    app.KeepFiguresCheck.Value);
-                runner.MaxVariableMB = app.MaxVariableMB;
-                runner.MaxTotalMB = app.MaxTotalMB;
-                runner.LazyWorkspaceMB = app.LazyWorkspaceMB;
-                runner.SaveFigFiles = app.SaveFigFiles;
-                runner.FigureResolution = app.FigureResolution;
-                runner.NumWorkers = app.NumWorkers;
-                runner.MaxWorkers = app.MaxWorkers;
-                runner.BaseSeed = app.SweepSeed;
-                runner.MaxScenarios = maxScenarios;
-                runner.ProjectMode = app.ProjectMode;
-                runner.EntryFile = app.EntryFile;
-                runner.Parallel = logical(parallel);
-                runner.Progress = @(fraction, message) ...
-                    app.updateSweepProgress(d, fraction, message);
-                runner.ShouldCancel = @() app.sweepCancelRequested(d);
-                out = runner.run();
-
-                app.Results.LastRun = out.agg;
-                app.Results.LastWorkspace = out.agg.workspaceData;
-                app.Results.OutputDir = out.sweepRoot;
-                app.Results.LastReport = out.report;
-                app.Results.refreshAll();
-                if isempty(out.agg.log)
-                    app.LogArea.Value = {''};
-                else
-                    app.LogArea.Value = splitlines(out.agg.log);
-                end
-                app.ReportButton.Enable = 'on';
-                app.FolderButton.Enable = 'on';
-                app.CloseFiguresButton.Enable = 'on';
-                app.CompareButton.Enable = 'on';
-
-                summary.ok = true;
-                summary.sweepRoot = out.sweepRoot;
-                summary.count = out.count;
-                summary.report = out.report;
-                summary.overlayPath = out.overlayPath;
-                summary.metricsPath = out.metricsPath;
-                summary.canceled = out.canceled;
-                if out.canceled
-                    app.StatusLabel.Text = sprintf( ...
-                        '批量扫描已取消：已完成 %d 组，报告：%s', ...
-                        out.count, out.report);
-                elseif isempty(out.metricsPath)
-                    app.StatusLabel.Text = sprintf( ...
-                        '批量扫描完成：%d 组，%d 张图。报告：%s', ...
-                        out.count, numel(out.agg.figures), out.report);
-                else
-                    app.StatusLabel.Text = sprintf( ...
-                        '批量扫描完成：%d 组，%d 张图。指标 CSV：%s', ...
-                        out.count, numel(out.agg.figures), out.metricsPath);
-                end
-            catch err
-                app.StatusLabel.Text = ['批量扫描失败：' err.message];
-                uialert(app.UIFigure, err.message, '批量扫描失败', ...
-                    'Icon', 'error');
-            end
-            if ~hadPool && ~app.KeepParallelPool
-                try
-                    delete(gcp('nocreate'));
-                catch err
-                    mps.logWarning('关闭扫描并行池', err, 'Silent', true);
-                end
-            end
-            clear cleanupObj;
-        end
-
-        function updateSweepProgress(app, d, fraction, message) %#ok<INUSD>
-            if ~isempty(d) && isvalid(d)
-                d.Value = min(max(fraction, 0), 1);
-                if fraction > 0.01 && fraction < 1 && app.SweepStartedAt > 0
-                    elapsed = toc(app.SweepStartedAt);
-                    remaining = elapsed * (1 - fraction) / fraction;
-                    d.Message = sprintf('%s（已用 %.0f s，预计剩余 %.0f s）', ...
-                        message, elapsed, remaining);
-                else
-                    d.Message = message;
-                end
-            end
-            drawnow;
-        end
-
-        function tf = sweepCancelRequested(~, d)
-            tf = false;
-            if ~isempty(d) && isvalid(d)
-                try
-                    tf = logical(d.CancelRequested);
-                catch
-                end
-            end
-        end
-
         function ok = confirmInteractiveCalls(app, actionLabel)
             ok = true;
             calls = mps.detectInteractiveCalls(app.SourceFile);
@@ -1282,16 +1122,6 @@ classdef App < handle
                 'Options', {'仍然继续', '取消'}, ...
                 'DefaultOption', 2, 'CancelOption', 2);
             ok = strcmp(choice, '仍然继续');
-        end
-
-        function finishSweep(app, d, oldHV)
-            if ~isempty(d) && isvalid(d)
-                delete(d);
-            end
-            if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
-                app.UIFigure.HandleVisibility = oldHV;
-            end
-            app.setBusy(false);
         end
 
         function onRunHistory(app)
