@@ -206,8 +206,10 @@ function code = codeOnly(line)
             transpose = false;
             if p >= 1
                 pc = line(p);
+                % A preceding quote does NOT make this a transpose: 'a' 'b'
+                % concatenates two strings.  Only 'a).' is a transpose.
                 transpose = isletter(pc) || (pc >= '0' && pc <= '9') || pc == '_' || ...
-                    pc == ')' || pc == ']' || pc == '}' || pc == '.' || pc == '''';
+                    pc == ')' || pc == ']' || pc == '}' || pc == '.';
             end
             if transpose
                 i = i + 1;

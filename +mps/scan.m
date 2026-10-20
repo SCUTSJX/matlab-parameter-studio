@@ -339,8 +339,11 @@ function tf = isTransposeQuote(line, i)
         return;
     end
     c = line(p);
+    % Note: a preceding quote does NOT make this a transpose.  In 'a' 'b'
+    % the second quote opens a new string (implicit concatenation); the
+    % only valid transpose after a string is the dotted 'a'.'
     tf = isletter(c) || isDigitChar(c) || c == '_' || c == ')' || ...
-        c == ']' || c == '}' || c == '.' || c == '''';
+        c == ']' || c == '}' || c == '.';
 end
 
 % -------------------------------------------------------------------------
@@ -350,6 +353,25 @@ function lits = findLiterals(line, mask)
     code = line;
     code(~mask) = ' ';
     lits = struct('start', {}, 'end', {}, 'text', {}, 'isLogical', {});
+
+    % Track []/{} nesting depth at each position (code only).  Inside
+    % concatenation brackets MATLAB treats a sign that touches its number
+    % as unary: [1 -1] is the two elements 1 and -1, while [1 - 1] and
+    % [1-1] are binary subtraction.  Outside brackets the sign is always
+    % binary unless preceded by an operator.
+    depth = zeros(1, n);
+    d = 0;
+    for k = 1:n
+        if mask(k)
+            c = line(k);
+            if c == '[' || c == '{'
+                d = d + 1;
+            elseif c == ']' || c == '}'
+                d = max(0, d - 1);
+            end
+        end
+        depth(k) = d;
+    end
 
     % Logical literals.
     for word = {'true', 'false'}
@@ -447,7 +469,14 @@ function lits = findLiterals(line, mask)
             while q >= 1 && isspace(line(q))
                 q = q - 1;
             end
-            if q < 1 || any(line(q) == '([{,;:=+-*/^<>&|~')
+            includeSign = q < 1 || any(line(q) == '([{,;:=+-*/^<>&|~');
+            % Inside []/{} concatenation, a sign written directly against
+            % the number is unary: [1 -1] -> [1, -1], not [0].
+            if ~includeSign && depth(p) > 0 && p + 1 <= n && ...
+                    ~isspace(line(p + 1))
+                includeSign = true;
+            end
+            if includeSign
                 s = p;
             end
         end
