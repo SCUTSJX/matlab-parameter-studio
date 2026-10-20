@@ -470,9 +470,11 @@ function lits = findLiterals(line, mask)
                 q = q - 1;
             end
             includeSign = q < 1 || any(line(q) == '([{,;:=+-*/^<>&|~');
-            % Inside []/{} concatenation, a sign written directly against
-            % the number is unary: [1 -1] -> [1, -1], not [0].
-            if ~includeSign && depth(p) > 0 && p + 1 <= n && ...
+            % Inside []/{} concatenation, a sign after whitespace and written
+            % directly against the number is unary: [1 -1] -> [1, -1].
+            % [1-1] and [1 - 1] remain binary subtraction.
+            if ~includeSign && depth(p) > 0 && p > 1 && ...
+                    isspace(line(p - 1)) && p + 1 <= n && ...
                     ~isspace(line(p + 1))
                 includeSign = true;
             end

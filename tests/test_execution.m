@@ -57,6 +57,23 @@
         'lazy workspace.mat should contain the run result');
     fprintf('  lazy workspace: ok\n');
 
+    errVarScript = fullfile(tempdir, 'mps_err_variable.m');
+    fid = fopen(errVarScript, 'w', 'n', 'UTF-8');
+    fprintf(fid, 'err = 42;\nx = 1;\n');
+    fclose(fid);
+    errVarDir = fullfile(tempdir, 'mps_err_variable_run');
+    if isfolder(errVarDir)
+        rmdir(errVarDir, 's');
+    end
+    rErrVar = mps.runScript(errVarScript, errVarScript, errVarDir);
+    assert(rErrVar.ok, rErrVar.error);
+    assert(isfield(rErrVar.workspaceData, 'err') && ...
+        rErrVar.workspaceData.err == 42, ...
+        'a user variable named err must not be filtered out');
+    rmdir(errVarDir, 's');
+    delete(errVarScript);
+    fprintf('  user err variable capture: ok\n');
+
     % --- 3b. Reused figure capture ---------------------------------------
     reuseFig = figure(1);
     clf(reuseFig);
