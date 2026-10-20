@@ -8,6 +8,9 @@ classdef App < handle
         UIFigure
         SourceFile = ''
         EntryFile = ''
+        ProjectRoot = ''
+        ProjectMode = false
+        ProjectStamp = ''
         SourceStamp = struct()
         Results
         MaxVariableMB = 100
@@ -25,13 +28,13 @@ classdef App < handle
 
     properties (Access = private)
         FileLabel, StatusLabel
-        FilterDrop, SearchField, CountLabel
+        FilterDrop, SearchField, FileFilterDrop, CountLabel
         Table, SourcePreview
         FigureDrop, FigureImage
         WorkspaceTable
         XDrop, YList, PlotStatus, UIAxes
         LogArea
-        OpenButton, RescanButton, RunButton, SaveButton, ReportButton
+        OpenButton, ProjectButton, RescanButton, RunButton, SaveButton, ReportButton
         FolderButton, ExportButton, CloseFiguresButton, HelpButton
         SelectAllButton, ResetButton, PlotButton, SavePlotButton, ExportCsvButton
         OpenReportInline
@@ -187,6 +190,9 @@ classdef App < handle
 
             app.SourceFile = filePath;
             app.EntryFile = '';
+            app.ProjectMode = false;
+            app.ProjectRoot = '';
+            app.ProjectStamp = '';
             app.Params = p;
             app.LastAnnotations = struct([]);
             app.AnnotationFile = '';
@@ -199,6 +205,7 @@ classdef App < handle
 
             app.SourceStamp = mps.sourceStamp(filePath);
             app.TableCtl.setSource(filePath, app.SourceStamp);
+            app.TableCtl.RecommendedMinScore = 3;
             app.TableCtl.resetHistory();
             sessionNote = '';
             if restoreSession
@@ -304,6 +311,11 @@ classdef App < handle
             if app.TableCtl.needsSave()
                 app.TableCtl.saveSession();
             end
+        end
+
+        function loadProject(app, entryFile)
+            %LOADPROJECT Scan a project folder and classify params by file.
+            app.loadProjectInternal(entryFile);
         end
 
         function setEntryPoint(app, entryFile)
@@ -476,7 +488,8 @@ classdef App < handle
             app.Save = mps.SaveController(app.UIFigure, app.StatusLabel);
             app.TableCtl = mps.ParameterTableController( ...
                 app.UIFigure, app.Table, app.FilterDrop, app.SearchField, ...
-                app.CountLabel, app.SelectAllButton, app.SourcePreview, ...
+                app.FileFilterDrop, app.CountLabel, ...
+                app.SelectAllButton, app.SourcePreview, ...
                 app.LockButton, app.UndoButton, app.RedoButton, ...
                 app.AnnotationStatus, app.StatusLabel);
         end
@@ -485,6 +498,7 @@ classdef App < handle
             %UICALLBACKS Function handles used by mps.buildAppUI.
             callbacks = struct();
             callbacks.onOpen = @(s, e) app.onOpen();
+            callbacks.onOpenProject = @(s, e) app.onOpenProject();
             callbacks.onRescan = @(s, e) app.onRescan();
             callbacks.onRun = @(s, e) app.onRun();
             callbacks.onSaveTuned = @(s, e) app.onSaveTuned();
@@ -571,6 +585,124 @@ classdef App < handle
             app.loadFile(fullfile(path, file));
         end
 
+        function onOpenProject(app)
+            if isempty(app.SourceFile)
+                startDir = pwd;
+            else
+                startDir = fileparts(app.SourceFile);
+            end
+            [file, path] = uigetfile({'*.m', '项目入口脚本 (*.m)'}, ...
+                '选择项目入口脚本', startDir);
+            if isequal(file, 0)
+                return;
+            end
+            app.loadProject(fullfile(path, file));
+        end
+
+        function loadProjectInternal(app, entryFile)
+            %LOADPROJECTINTERNAL Scan all .m files under the entry folder.
+            entryFile = char(entryFile);
+            if ~isfile(entryFile)
+                uialert(app.UIFigure, sprintf('入口脚本不存在：\n%s', entryFile), ...
+                    '打开项目失败', 'Icon', 'error');
+                return;
+            end
+            try
+                p = mps.scanProject(fileparts(entryFile));
+            catch err
+                uialert(app.UIFigure, err.message, '项目扫描失败', ...
+                    'Icon', 'error');
+                return;
+            end
+            if isempty(p)
+                uialert(app.UIFigure, ...
+                    '项目里没有识别到可调参数。请确认入口脚本所在目录下有 .m 文件。', ...
+                    '没有参数', 'Icon', 'warning');
+                return;
+            end
+
+            raw = fileread(entryFile);
+            raw = strrep(raw, sprintf('\r\n'), sprintf('\n'));
+            raw = strrep(raw, sprintf('\r'), sprintf('\n'));
+            lines = regexp(raw, '\n', 'split');
+            if ~isempty(lines) && isempty(lines{end})
+                lines(end) = [];
+            end
+
+            app.SourceFile = entryFile;
+            app.EntryFile = entryFile;
+            app.ProjectRoot = fileparts(entryFile);
+            app.ProjectMode = true;
+            app.ProjectStamp = mps.projectStamp(app.ProjectRoot).signature;
+            app.IsFunctionFile = false;
+            app.SourceLines = lines;
+            app.Params = p;
+            app.LastAnnotations = struct([]);
+            app.AnnotationFile = '';
+            app.SourceStamp = mps.sourceStamp(entryFile);
+            app.TableCtl.setSource(entryFile, app.SourceStamp);
+            app.TableCtl.RecommendedMinScore = 5;
+            app.TableCtl.resetHistory();
+            app.loadPresetsFromDisk();
+            app.Results.clear();
+            app.TableCtl.clearSelection();
+            app.SourcePreview.Value = {''};
+            app.LogArea.Value = {''};
+            app.FileLabel.Text = entryFile;
+            app.FileLabel.FontColor = [0.12 0.12 0.12];
+            app.FileLabel.Tooltip = entryFile;
+            app.RescanButton.Enable = 'on';
+            app.RunButton.Enable = 'on';
+            app.SaveButton.Enable = 'off';
+            app.ExportButton.Enable = 'on';
+            app.SweepButton.Enable = 'off';
+            app.ManualButton.Enable = 'off';
+            app.EntryButton.Enable = 'on';
+            app.AnnotateTemplateButton.Enable = 'on';
+            app.ImportAnnotationButton.Enable = 'on';
+            app.ClearAnnotationButton.Enable = 'on';
+            app.LockButton.Enable = 'on';
+            app.BulkButton.Enable = 'on';
+            app.CompareButton.Enable = 'on';
+            if license('test', 'Distrib_Computing_Toolbox')
+                app.BackgroundCheck.Enable = 'on';
+            else
+                app.BackgroundCheck.Enable = 'off';
+            end
+            app.ReportButton.Enable = 'off';
+            app.FolderButton.Enable = 'off';
+            app.CloseFiguresButton.Enable = 'off';
+            app.PlotButton.Enable = 'off';
+            app.SavePlotButton.Enable = 'off';
+            app.ExportCsvButton.Enable = 'off';
+            app.refreshTable();
+            labels = app.FileFilterDrop.Items(2:end);
+            defaultLabel = '';
+            patterns = {'catalog', 'config', 'params', 'parameters', ...
+                'setup', 'values'};
+            for k = 1:numel(labels)
+                for j = 1:numel(patterns)
+                    if contains(lower(labels{k}), patterns{j})
+                        defaultLabel = labels{k};
+                        break;
+                    end
+                end
+                if ~isempty(defaultLabel)
+                    break;
+                end
+            end
+            if ~isempty(defaultLabel)
+                app.FileFilterDrop.Value = defaultLabel;
+                app.refreshTable();
+            end
+            app.StatusLabel.Text = sprintf( ...
+                ['项目模式：入口 %s，扫描 %d 个 .m 文件，识别 %d 个参数。' ...
+                 '默认显示 %s，可切换“文件”筛选。'], ...
+                entryFile, numel(unique({p.sourceFile})), numel(p), ...
+                app.FileFilterDrop.Value);
+            drawnow;
+        end
+
         function onChooseEntry(app)
             if isempty(app.SourceFile)
                 uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
@@ -613,7 +745,7 @@ classdef App < handle
                     return;
                 end
                 col = indices(1, 2);
-                if ~ismember(col, [3 6])
+                if ~ismember(col, [4 7])
                     return;
                 end
             end
@@ -624,14 +756,18 @@ classdef App < handle
             end
             idx = app.SelectedParams(end);
             lineNo = app.Params(idx).line;
+            file = app.Params(idx).sourceFile;
+            if isempty(file)
+                file = app.SourceFile;
+            end
             try
                 matlab.desktop.editor.openAndGoToLine( ...
-                    app.SourceFile, max(1, lineNo));
+                    file, max(1, lineNo));
                 app.StatusLabel.Text = sprintf( ...
-                    '已在 MATLAB 编辑器中打开：第 %d 行。', lineNo);
+                    '已在 MATLAB 编辑器中打开：%s 第 %d 行。', file, lineNo);
             catch
                 try
-                    edit(app.SourceFile);
+                    edit(file);
                     app.StatusLabel.Text = sprintf( ...
                         '已打开源文件（未能定位到第 %d 行）。', lineNo);
                 catch err
@@ -644,6 +780,15 @@ classdef App < handle
         function changed = sourceChanged(app)
             %SOURCECHANGED True when the file changed after it was scanned.
             changed = false;
+            if app.ProjectMode && ~isempty(app.ProjectRoot)
+                try
+                    changed = ~strcmp(mps.projectStamp(app.ProjectRoot).signature, ...
+                        app.ProjectStamp);
+                catch
+                    changed = true;
+                end
+                return;
+            end
             if isempty(app.SourceFile) || isempty(fieldnames(app.SourceStamp))
                 return;
             end
@@ -695,7 +840,11 @@ classdef App < handle
                 delete(mps.sessionPath(app.SourceFile));
             catch
             end
-            app.loadFile(app.SourceFile, 'RestoreSession', false);
+            if app.ProjectMode
+                app.loadProjectInternal(app.SourceFile);
+            else
+                app.loadFile(app.SourceFile, 'RestoreSession', false);
+            end
             preset = struct('name', '重扫前修改', ...
                 'values', mps.paramsToValues(oldParams));
             [app.Params, stats] = mps.applyPreset(app.Params, preset);
@@ -734,7 +883,11 @@ classdef App < handle
                 delete(mps.sessionPath(app.SourceFile));
             catch
             end
-            app.loadFile(app.SourceFile, 'RestoreSession', false);
+            if app.ProjectMode
+                app.loadProjectInternal(app.SourceFile);
+            else
+                app.loadFile(app.SourceFile, 'RestoreSession', false);
+            end
         end
 
         function onRun(app)
@@ -787,8 +940,9 @@ classdef App < handle
                     end
                 end
 
-                if ~isempty(app.EntryFile) && ...
-                        ~strcmpi(app.EntryFile, app.SourceFile)
+                if app.ProjectMode || ...
+                        (~isempty(app.EntryFile) && ...
+                        ~strcmpi(app.EntryFile, app.SourceFile))
                     executor = mps.ProjectRunExecutor(app.SourceFile, ...
                         app.EntryFile, app.Params, ...
                         app.KeepFiguresCheck.Value);
@@ -890,8 +1044,9 @@ classdef App < handle
                 end
 
                 app.setBackgroundProgress('后台运行 MATLAB 脚本...');
-                if ~isempty(app.EntryFile) && ...
-                        ~strcmpi(app.EntryFile, app.SourceFile)
+                if app.ProjectMode || ...
+                        (~isempty(app.EntryFile) && ...
+                        ~strcmpi(app.EntryFile, app.SourceFile))
                     app.BackgroundFuture = parfeval(pool, ...
                         @mps.backgroundProjectRun, 1, app.SourceFile, ...
                         app.EntryFile, app.Params, ...
@@ -1314,6 +1469,12 @@ classdef App < handle
                     'Icon', 'warning');
                 return;
             end
+            if app.ProjectMode
+                uialert(app.UIFigure, ...
+                    '项目模式暂不支持批量扫描；请用单次后台运行或分别打开参数文件。', ...
+                    '项目模式', 'Icon', 'warning');
+                return;
+            end
             if app.IsFunctionFile
                 uialert(app.UIFigure, ...
                     '这是函数文件，不能直接扫描运行。请打开调用它的脚本。', ...
@@ -1340,6 +1501,12 @@ classdef App < handle
             if isempty(app.SourceFile)
                 uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
                     'Icon', 'warning');
+                return;
+            end
+            if app.ProjectMode
+                uialert(app.UIFigure, ...
+                    '项目模式暂不支持手动参数；请在有明确源文件的单文件模式下使用。', ...
+                    '项目模式', 'Icon', 'warning');
                 return;
             end
             if app.IsFunctionFile
@@ -1637,6 +1804,13 @@ classdef App < handle
             if isempty(app.SourceFile)
                 return;
             end
+            if app.ProjectMode
+                uialert(app.UIFigure, ...
+                    ['项目模式一次修改多个文件，暂不支持合并保存为单个 _tuned.m。' ...
+                     '请使用参数集/JSON 记录，或分别打开各文件保存。'], ...
+                    '项目模式不支持单文件保存', 'Icon', 'warning');
+                return;
+            end
             if ~app.ensureSourceCurrent('保存')
                 return;
             end
@@ -1741,9 +1915,14 @@ classdef App < handle
                         app.PresetLoadButton.Enable = 'on';
                         app.PresetDeleteButton.Enable = 'on';
                     end
-                    if ~app.IsFunctionFile
+                    if ~app.IsFunctionFile && ~app.ProjectMode
                         app.SweepButton.Enable = 'on';
                         app.ManualButton.Enable = 'on';
+                    end
+                    if app.ProjectMode
+                        app.SaveButton.Enable = 'off';
+                        app.SweepButton.Enable = 'off';
+                        app.ManualButton.Enable = 'off';
                     end
                 end
                 if isempty(app.SourceFile)

@@ -22,9 +22,9 @@ function h = buildAppUI(cb)
     root.Padding = [10 10 10 8];
     root.RowSpacing = 8;
 
-    tb = uigridlayout(root, [1 11]);
+    tb = uigridlayout(root, [1 12]);
     tb.Layout.Row = 1;
-    tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 110, 110, 100, 90, 90};
+    tb.ColumnWidth = {108, '1x', 88, 78, 132, 100, 110, 110, 100, 90, 96, 90};
     tb.Padding = [0 0 0 0];
     tb.ColumnSpacing = 6;
 
@@ -71,9 +71,13 @@ function h = buildAppUI(cb)
         'Enable', 'off', 'ButtonPushedFcn', @(s, e) cb.onRunHistory());
     h.CompareButton.Layout.Column = 10;
 
+    h.ProjectButton = uibutton(tb, 'Text', '打开项目...', ...
+        'ButtonPushedFcn', @(s, e) cb.onOpenProject());
+    h.ProjectButton.Layout.Column = 11;
+
     h.HelpButton = uibutton(tb, 'Text', '快速上手', ...
         'ButtonPushedFcn', @(s, e) cb.onHelp());
-    h.HelpButton.Layout.Column = 11;
+    h.HelpButton.Layout.Column = 12;
 
     main = uigridlayout(root, [1 2]);
     main.Layout.Row = 2;
@@ -88,9 +92,9 @@ function h = buildAppUI(cb)
     lg.Padding = [8 8 8 8];
     lg.RowSpacing = 6;
 
-    fg = uigridlayout(lg, [1 6]);
+    fg = uigridlayout(lg, [1 7]);
     fg.Layout.Row = 1;
-    fg.ColumnWidth = {120, '1x', 150, 92, 92, 104};
+    fg.ColumnWidth = {110, '1x', 130, 82, 84, 84, 100};
     fg.Padding = [0 0 0 0];
     fg.ColumnSpacing = 6;
 
@@ -105,23 +109,28 @@ function h = buildAppUI(cb)
         'ValueChangedFcn', @(s, e) cb.refreshTable());
     h.SearchField.Layout.Column = 2;
 
+    h.FileFilterDrop = uidropdown(fg, ...
+        'Items', {'(全部文件)'}, 'Value', '(全部文件)', ...
+        'ValueChangedFcn', @(s, e) cb.refreshTable());
+    h.FileFilterDrop.Layout.Column = 3;
+
     h.CountLabel = uilabel(fg, 'Text', '0 / 0', ...
         'HorizontalAlignment', 'right', ...
         'FontColor', [0.4 0.4 0.4]);
-    h.CountLabel.Layout.Column = 3;
+    h.CountLabel.Layout.Column = 4;
 
     h.SelectAllButton = uibutton(fg, 'Text', '全选推荐', ...
         'ButtonPushedFcn', @(s, e) cb.onSelectAll());
-    h.SelectAllButton.Layout.Column = 4;
+    h.SelectAllButton.Layout.Column = 5;
 
     h.ResetButton = uibutton(fg, 'Text', '重置新值', ...
         'ButtonPushedFcn', @(s, e) cb.onReset());
-    h.ResetButton.Layout.Column = 5;
+    h.ResetButton.Layout.Column = 6;
 
     h.BulkButton = uibutton(fg, 'Text', '批量修改...', ...
         'Enable', 'off', ...
         'ButtonPushedFcn', @(s, e) cb.onBulkEdit());
-    h.BulkButton.Layout.Column = 6;
+    h.BulkButton.Layout.Column = 7;
 
     ag = uigridlayout(lg, [1 7]);
     ag.Layout.Row = 2;
@@ -209,10 +218,10 @@ function h = buildAppUI(cb)
     h.EntryButton.Layout.Column = 8;
 
     h.Table = uitable(lg, ...
-        'ColumnName', {'使用', '锁定', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
-        'ColumnEditable', [true true false false true false false false false], ...
-        'ColumnFormat', {'logical', 'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char'}, ...
-        'ColumnWidth', {40, 46, 160, 70, 70, 34, 68, 110, '1x'}, ...
+        'ColumnName', {'使用', '锁定', '文件', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
+        'ColumnEditable', [true true false false false true false false false false], ...
+        'ColumnFormat', {'logical', 'logical', 'char', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char'}, ...
+        'ColumnWidth', {40, 46, 90, 150, 66, 66, 30, 64, 100, '1x'}, ...
         'RowName', [], ...
         'CellEditCallback', @(s, e) cb.onCellEdit(e), ...
         'CellSelectionCallback', @(s, e) cb.onCellSelect(e));
@@ -362,6 +371,9 @@ function setTooltips(h)
     set(h.FilterDrop, 'Tooltip', ...
         '选择显示哪些参数：推荐参数 / 全部数字 / 已修改');
     set(h.SearchField, 'Tooltip', '按参数名、注释或行号搜索');
+    set(h.FileFilterDrop, 'Tooltip', '只看某个源文件里的参数');
+    set(h.ProjectButton, 'Tooltip', ...
+        '选择一个项目入口脚本，扫描整个项目的 .m 文件并按文件分类参数');
     set(h.SelectAllButton, 'Tooltip', ...
         '一键勾选或取消所有推荐参数');
     set(h.ResetButton, 'Tooltip', ...

@@ -12,6 +12,11 @@ classdef ParameterTableController < handle
         LastAnnotations = struct([])
         AnnotationFile = ''
         SourceLines = {}
+        RecommendedMinScore = 3
+    end
+
+    properties (Access = private)
+        SourceLinesByFile
     end
 
     properties (Access = private)
@@ -29,6 +34,7 @@ classdef ParameterTableController < handle
         Table
         FilterDrop
         SearchField
+        FileFilterDrop
         CountLabel
         SelectAllButton
         SourcePreview
@@ -41,13 +47,16 @@ classdef ParameterTableController < handle
 
     methods
         function obj = ParameterTableController(uiFigure, table, filterDrop, ...
-                searchField, countLabel, selectAllButton, sourcePreview, ...
-                lockButton, undoButton, redoButton, annotationStatus, ...
-                statusLabel)
+                searchField, fileFilterDrop, countLabel, selectAllButton, ...
+                sourcePreview, lockButton, undoButton, redoButton, ...
+                annotationStatus, statusLabel)
+            obj.SourceLinesByFile = containers.Map( ...
+                'KeyType', 'char', 'ValueType', 'any');
             obj.UIFigure = uiFigure;
             obj.Table = table;
             obj.FilterDrop = filterDrop;
             obj.SearchField = searchField;
+            obj.FileFilterDrop = fileFilterDrop;
             obj.CountLabel = countLabel;
             obj.SelectAllButton = selectAllButton;
             obj.SourcePreview = sourcePreview;
@@ -61,6 +70,8 @@ classdef ParameterTableController < handle
         function setSource(obj, sourceFile, stamp)
             obj.SourceFile = char(sourceFile);
             obj.SourceStamp = stamp;
+            obj.SourceLinesByFile = containers.Map( ...
+                'KeyType', 'char', 'ValueType', 'any');
         end
 
         function resetHistory(obj)
@@ -146,14 +157,25 @@ classdef ParameterTableController < handle
 
         function refresh(obj)
             if isempty(obj.Params)
-                obj.Table.Data = cell(0, 9);
+                obj.Table.Data = cell(0, 10);
                 obj.VisibleIdx = [];
                 obj.clearSelection();
+                obj.FileFilterDrop.Items = {'(全部文件)'};
+                obj.FileFilterDrop.Value = '(全部文件)';
                 obj.CountLabel.Text = '0 / 0';
                 obj.updateAnnotationStatus();
                 obj.updateUndoButtons();
                 return;
             end
+
+            files = unique({obj.Params.sourceFile});
+            labels = unique(cellfun(@fileName, files, ...
+                'UniformOutput', false), 'stable');
+            obj.FileFilterDrop.Items = [{'(全部文件)'}, labels]; %#ok<AGROW>
+            if ~any(strcmp(obj.FileFilterDrop.Items, obj.FileFilterDrop.Value))
+                obj.FileFilterDrop.Value = obj.FileFilterDrop.Items{1};
+            end
+            fileFilter = char(obj.FileFilterDrop.Value);
 
             for k = 1:numel(obj.Params)
                 obj.Params(k).isChanged = ~strcmp( ...
@@ -168,16 +190,20 @@ classdef ParameterTableController < handle
                 p = obj.Params(k);
                 switch mode
                     case '推荐参数'
-                        keep = p.score >= 3;
+                        keep = p.score >= obj.RecommendedMinScore;
                     case '已修改'
                         keep = p.isChanged;
                     otherwise
                         keep = true;
                 end
+                if keep && ~strcmp(fileFilter, '(全部文件)') && ...
+                        ~strcmp(fileName(p.sourceFile), fileFilter)
+                    keep = false;
+                end
                 if keep && ~isempty(q)
-                    hay = lower(sprintf('%s %s %s %s %s %d', ...
+                    hay = lower(sprintf('%s %s %s %s %s %s %d', ...
                         p.name, p.description, p.unit, p.note, ...
-                        p.context, p.line));
+                        p.context, fileName(p.sourceFile), p.line));
                     keep = contains(hay, q);
                 end
                 if keep
@@ -186,7 +212,7 @@ classdef ParameterTableController < handle
             end
             obj.VisibleIdx = idx;
 
-            data = cell(numel(idx), 9);
+            data = cell(numel(idx), 10);
             for j = 1:numel(idx)
                 p = obj.Params(idx(j));
                 note = p.note;
@@ -203,13 +229,14 @@ classdef ParameterTableController < handle
                 end
                 data{j,1} = p.use;
                 data{j,2} = p.locked;
-                data{j,3} = nameCell;
-                data{j,4} = p.value;
-                data{j,5} = p.newValue;
-                data{j,6} = p.line;
-                data{j,7} = categoryLabel(p.category);
-                data{j,8} = note;
-                data{j,9} = annotationText(p);
+                data{j,3} = fileName(p.sourceFile);
+                data{j,4} = nameCell;
+                data{j,5} = p.value;
+                data{j,6} = p.newValue;
+                data{j,7} = p.line;
+                data{j,8} = categoryLabel(p.category);
+                data{j,9} = note;
+                data{j,10} = annotationText(p);
             end
             obj.Table.Data = data;
             obj.restoreTableSelection();
@@ -217,7 +244,7 @@ classdef ParameterTableController < handle
                 numel(idx), numel(obj.Params), sum([obj.Params.isChanged]));
             obj.updateAnnotationStatus();
 
-            rec = [obj.Params.score] >= 3;
+            rec = [obj.Params.score] >= obj.RecommendedMinScore;
             if any(rec)
                 if all([obj.Params(rec).use])
                     obj.SelectAllButton.Text = '取消全选';
@@ -252,7 +279,7 @@ classdef ParameterTableController < handle
                     obj.Params(idx).newValue = obj.Params(idx).value;
                     obj.Params(idx).isChanged = false;
                 end
-            elseif col == 5
+            elseif col == 6
                 if obj.Params(idx).locked
                     obj.alert('该参数已锁定，不能修改。请先在“锁定”列取消勾选。', ...
                         '参数已锁定', 'Icon', 'warning');
@@ -310,13 +337,14 @@ classdef ParameterTableController < handle
 
             row = rows(end);
             idx = obj.VisibleIdx(row);
-            if isempty(obj.SourceLines)
+            lines = obj.linesFor(obj.Params(idx).sourceFile);
+            if isempty(lines)
                 obj.SourcePreview.Value = {''};
                 return;
             end
             lineNo = obj.Params(idx).line;
             lo = max(1, lineNo - 2);
-            hi = min(numel(obj.SourceLines), lineNo + 2);
+            hi = min(numel(lines), lineNo + 2);
             preview = cell(hi - lo + 1, 1);
             for j = lo:hi
                 if j == lineNo
@@ -325,7 +353,7 @@ classdef ParameterTableController < handle
                     marker = '   ';
                 end
                 preview{j - lo + 1} = sprintf('%s%4d | %s', ...
-                    marker, j, obj.SourceLines{j});
+                    marker, j, lines{j});
             end
             ann = annotationText(obj.Params(idx));
             if ~isempty(ann)
@@ -338,7 +366,7 @@ classdef ParameterTableController < handle
             if isempty(obj.Params)
                 return;
             end
-            rec = [obj.Params.score] >= 3;
+            rec = [obj.Params.score] >= obj.RecommendedMinScore;
             if ~any(rec)
                 return;
             end
@@ -493,6 +521,30 @@ classdef ParameterTableController < handle
             obj.AnnotationFile = state{4};
         end
 
+        function lines = linesFor(obj, file)
+            file = char(file);
+            if strcmp(file, obj.SourceFile) && ~isempty(obj.SourceLines)
+                lines = obj.SourceLines;
+                return;
+            end
+            if isKey(obj.SourceLinesByFile, file)
+                lines = obj.SourceLinesByFile(file);
+                return;
+            end
+            lines = {};
+            try
+                raw = fileread(file);
+                raw = strrep(raw, sprintf('\r\n'), sprintf('\n'));
+                raw = strrep(raw, sprintf('\r'), sprintf('\n'));
+                lines = regexp(raw, '\n', 'split');
+                if ~isempty(lines) && isempty(lines{end})
+                    lines(end) = [];
+                end
+                obj.SourceLinesByFile(file) = lines;
+            catch
+            end
+        end
+
         function restoreTableSelection(obj)
             if ~isempty(obj.SelectedParams)
                 [keep, visibleRows] = ismember(obj.SelectedParams, ...
@@ -576,6 +628,15 @@ classdef ParameterTableController < handle
                 obj.StatusLabel.Text = char(message);
             end
         end
+    end
+end
+
+% -------------------------------------------------------------------------
+function name = fileName(path)
+    [~, base, ext] = fileparts(char(path));
+    name = [base ext];
+    if isempty(name)
+        name = '(unknown)';
     end
 end
 

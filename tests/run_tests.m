@@ -640,6 +640,38 @@ function run_tests()
         'project entry should use the tuned config');
     assert(isfile(projOut.reportPath), 'project report missing');
     rmdir(projectRoot, 's');
+
+    multiRoot = fullfile(tempdir, 'mps_multi_project_test');
+    if isfolder(multiRoot)
+        rmdir(multiRoot, 's');
+    end
+    mkdir(multiRoot);
+    fid = fopen(fullfile(multiRoot, 'config.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function c=config()\nc.gain=1;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(multiRoot, 'helper.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function h=helper()\nh.bias=2;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(multiRoot, 'entry.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['c=config(); h=helper(); y=c.gain*10+h.bias; ' ...
+        'figure(''Name'',''multi''); plot(1:3);\n']);
+    fclose(fid);
+    pMulti = mps.scanProject(multiRoot);
+    gi = find(strcmp({pMulti.name}, 'c.gain'), 1);
+    bi = find(strcmp({pMulti.name}, 'h.bias'), 1);
+    pMulti(gi).newValue = '5';
+    pMulti(gi).use = true;
+    pMulti(bi).newValue = '7';
+    pMulti(bi).use = true;
+    multiExec = mps.ProjectRunExecutor( ...
+        fullfile(multiRoot, 'entry.m'), fullfile(multiRoot, 'entry.m'), ...
+        pMulti, false);
+    multiExec.Progress = @(msg) [];
+    multiOut = multiExec.run();
+    assert(multiOut.run.ok, 'multi-file project run failed');
+    assert(abs(multiOut.run.workspaceData.y - 57) < 1e-12, ...
+        'multi-file project edits were not both applied');
+    rmdir(multiRoot, 's');
     fprintf('  project entry execution: ok\n');
 
     % --- 21. SweepRunner -------------------------------------------------
@@ -775,6 +807,29 @@ function run_tests()
     assert(~isempty(app.Results.LastReport), ...
         'project entry run should create a report');
     rmdir(uiProject, 's');
+
+    uiMulti = fullfile(tempdir, 'mps_ui_multi_project_test');
+    if isfolder(uiMulti)
+        rmdir(uiMulti, 's');
+    end
+    mkdir(uiMulti);
+    fid = fopen(fullfile(uiMulti, 'config.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function c=config()\nc.gain=1;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(uiMulti, 'helper.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function h=helper()\nh.bias=2;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(uiMulti, 'entry.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['c=config(); h=helper(); y=c.gain*10+h.bias;\n']);
+    fclose(fid);
+    app.loadProject(fullfile(uiMulti, 'entry.m'));
+    assert(app.ProjectMode, 'loadProject should enable project mode');
+    assert(numel(unique({app.Params.sourceFile})) >= 2, ...
+        'project scan should cover multiple files');
+    app.runCurrent();
+    assert(~isempty(app.Results.LastReport), ...
+        'multi-file project run should create a report');
+    rmdir(uiMulti, 's');
     delete(app);
     if isfile(mps.sessionPath(manualLoad))
         delete(mps.sessionPath(manualLoad));

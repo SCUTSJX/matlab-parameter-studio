@@ -39,11 +39,6 @@ classdef ProjectRunExecutor < handle
             end
 
             projectRoot = fileparts(obj.EntryFile);
-            relativeSource = relativeTo(projectRoot, obj.SourceFile);
-            if isempty(relativeSource)
-                error('mps:ProjectRunExecutor:outsideProject', ...
-                    '参数文件不在入口脚本所在项目内：%s', obj.SourceFile);
-            end
             relativeEntry = relativeTo(projectRoot, obj.EntryFile);
             if isempty(relativeEntry)
                 relativeEntry = obj.EntryFile;
@@ -56,19 +51,32 @@ classdef ProjectRunExecutor < handle
             obj.Progress('复制项目到临时目录...');
             mps.copyProjectTree(projectRoot, shadowRoot);
 
-            shadowSource = fullfile(shadowRoot, relativeSource);
-            if ~isfile(shadowSource)
-                error('mps:ProjectRunExecutor:missingSource', ...
-                    '临时项目里找不到参数文件：%s', relativeSource);
-            end
             if any(arrayfun(@(p) isfield(p, 'manual') && logical(p.manual), ...
                     obj.Params))
                 error('mps:ProjectRunExecutor:manual', ...
                     '项目模式暂不支持手动参数。');
             end
             obj.Progress('写入调参后的配置...');
-            mps.applyEdits(obj.SourceFile, obj.Params, shadowSource, ...
-                'NeutralizeCloseAll', true);
+            files = unique({obj.Params.sourceFile});
+            for k = 1:numel(files)
+                file = files{k};
+                if isempty(file)
+                    continue;
+                end
+                rel = relativeTo(projectRoot, file);
+                if isempty(rel)
+                    error('mps:ProjectRunExecutor:outsideProject', ...
+                        '参数文件不在入口脚本所在项目内：%s', file);
+                end
+                shadowFile = fullfile(shadowRoot, rel);
+                if ~isfile(shadowFile)
+                    error('mps:ProjectRunExecutor:missingSource', ...
+                        '临时项目里找不到参数文件：%s', rel);
+                end
+                subset = obj.Params(strcmp({obj.Params.sourceFile}, file));
+                mps.applyEdits(file, subset, shadowFile, ...
+                    'NeutralizeCloseAll', true);
+            end
 
             wrapper = fullfile(shadowRoot, 'mps_project_wrapper.m');
             writeWrapper(wrapper, relativeEntry);
