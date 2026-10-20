@@ -84,6 +84,10 @@ classdef App < handle
             app.SourceCtl = mps.SourceController(app, app.TableCtl);
             app.SourceCtl.RefreshFcn = @() app.refreshTableView();
             app.SourceCtl.StatusFcn = @(message) app.setStatusText(message);
+            app.SourceCtl.RunFcn = @() app.onRun();
+            app.SourceCtl.BulkFcn = @() app.onBulkEdit();
+            app.SourceCtl.UndoFcn = @() app.undoLastEdit();
+            app.SourceCtl.RedoFcn = @() app.redoLastEdit();
             app.BackgroundMgr = mps.BackgroundRunManager(app.UIFigure);
             app.BackgroundMgr.ProgressFcn = ...
                 @(message) app.backgroundProgress(message);
@@ -601,44 +605,8 @@ classdef App < handle
             callbacks.onSavePlot = @(s, e) app.Results.savePlot( ...
                 app.SourceFile, app.Params);
             callbacks.onExportCurve = @(s, e) app.Results.exportCurveCsv();
-            callbacks.onKeyPress = @(e) app.onKeyPress(e);
-            callbacks.onClose = @() app.onClose();
+            callbacks.onKeyPress = @(e) app.SourceCtl.handleKeyPress(e);
         end
-
-        % -----------------------------------------------------------------
-        function onKeyPress(app, event)
-            %ONKEYPRESS F5 / Ctrl+Enter = run, Ctrl+O = open.
-            if ~isstruct(event) || ~isfield(event, 'Key')
-                return;
-            end
-            key = lower(event.Key);
-            mods = {};
-            if isfield(event, 'Modifier')
-                if iscell(event.Modifier)
-                    mods = event.Modifier;
-                elseif ischar(event.Modifier)
-                    mods = {event.Modifier};
-                end
-            end
-            hasCtrl = any(strcmpi(mods, 'control'));
-            hasShift = any(strcmpi(mods, 'shift'));
-            if strcmp(key, 'f5') || (strcmp(key, 'return') && hasCtrl)
-                app.onRun();
-            elseif strcmp(key, 'o') && hasCtrl
-                app.SourceCtl.openFileDialog();
-            elseif strcmp(key, 'b') && hasCtrl
-                app.onBulkEdit();
-            elseif strcmp(key, 'z') && hasCtrl
-                if hasShift
-                    app.redoLastEdit();
-                else
-                    app.undoLastEdit();
-                end
-            elseif strcmp(key, 'y') && hasCtrl
-                app.redoLastEdit();
-            end
-        end
-
 
         function changed = sourceChanged(app)
             %SOURCECHANGED True when the file changed after it was scanned.

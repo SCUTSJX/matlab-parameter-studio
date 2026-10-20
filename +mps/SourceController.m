@@ -9,12 +9,49 @@ classdef SourceController < handle
         TableCtl
         RefreshFcn = @() []
         StatusFcn = @(message) []
+        RunFcn = @() []
+        BulkFcn = @() []
+        UndoFcn = @() []
+        RedoFcn = @() []
     end
 
     methods
         function obj = SourceController(app, tableCtl)
             obj.App = app;
             obj.TableCtl = tableCtl;
+        end
+
+        function handleKeyPress(obj, event)
+            %HANDLEKEYPRESS F5 / Ctrl+Enter = run, Ctrl+O = open.
+            if ~isstruct(event) || ~isfield(event, 'Key')
+                return;
+            end
+            key = lower(event.Key);
+            mods = {};
+            if isfield(event, 'Modifier')
+                if iscell(event.Modifier)
+                    mods = event.Modifier;
+                elseif ischar(event.Modifier)
+                    mods = {event.Modifier};
+                end
+            end
+            hasCtrl = any(strcmpi(mods, 'control'));
+            hasShift = any(strcmpi(mods, 'shift'));
+            if strcmp(key, 'f5') || (strcmp(key, 'return') && hasCtrl)
+                obj.RunFcn();
+            elseif strcmp(key, 'o') && hasCtrl
+                obj.openFileDialog();
+            elseif strcmp(key, 'b') && hasCtrl
+                obj.BulkFcn();
+            elseif strcmp(key, 'z') && hasCtrl
+                if hasShift
+                    obj.RedoFcn();
+                else
+                    obj.UndoFcn();
+                end
+            elseif strcmp(key, 'y') && hasCtrl
+                obj.RedoFcn();
+            end
         end
 
         function openFileDialog(obj)
