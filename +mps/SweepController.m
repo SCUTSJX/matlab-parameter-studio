@@ -201,6 +201,7 @@ classdef SweepController < handle
                 try
                     tf = logical(d.CancelRequested);
                 catch
+                    % 对话框可能已关闭或失效；读取失败时按未请求取消处理
                 end
             end
         end
