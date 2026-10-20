@@ -163,7 +163,7 @@ function cleanupPreflightLogs(logDir, keepLogs)
     if numel(items) <= keepLogs
         return;
     end
-    [~, order] = sort({items.name}, 'descend');
+    [~, order] = sort([items.datenum], 'descend');
     items = items(order);
     for k = keepLogs + 1:numel(items)
         target = fullfile(logDir, items(k).name);
