@@ -1,0 +1,429 @@
+classdef ResultsController < handle
+%RESULTSCONTROLLER Own the result figures, workspace, plotting and exports.
+%
+%   results = mps.ResultsController(handles...)
+%
+%   The controller holds LastRun / LastWorkspace / OutputDir / LastReport
+%   and drives the 结果图 / 工作区 / 绘图 tabs.  App only forwards button
+%   callbacks and passes SourceFile/Params when a report must be rewritten.
+
+    properties
+        LastRun = struct()
+        LastWorkspace = struct()
+        OutputDir = ''
+        LastReport = ''
+    end
+
+    properties (Access = private)
+        UIFigure
+        FigureDrop
+        FigureImage
+        WorkspaceTable
+        XDrop
+        YList
+        UIAxes
+        PlotStatus
+        PlotButton
+        SavePlotButton
+        ExportCsvButton
+        ReportButton
+        StatusLabel
+        FigurePaths = {}
+        CustomPlotPath = ''
+    end
+
+    methods
+        function obj = ResultsController(uiFigure, figureDrop, figureImage, ...
+                workspaceTable, xDrop, yList, uiAxes, plotStatus, ...
+                plotButton, savePlotButton, exportCsvButton, reportButton, ...
+                statusLabel)
+            obj.UIFigure = uiFigure;
+            obj.FigureDrop = figureDrop;
+            obj.FigureImage = figureImage;
+            obj.WorkspaceTable = workspaceTable;
+            obj.XDrop = xDrop;
+            obj.YList = yList;
+            obj.UIAxes = uiAxes;
+            obj.PlotStatus = plotStatus;
+            obj.PlotButton = plotButton;
+            obj.SavePlotButton = savePlotButton;
+            obj.ExportCsvButton = exportCsvButton;
+            obj.ReportButton = reportButton;
+            obj.StatusLabel = statusLabel;
+        end
+
+        function clear(obj)
+            obj.LastRun = struct();
+            obj.LastWorkspace = struct();
+            obj.OutputDir = '';
+            obj.LastReport = '';
+            obj.FigurePaths = {};
+            obj.CustomPlotPath = '';
+
+            obj.FigureDrop.Items = {'(无图)'};
+            obj.FigureDrop.Value = '(无图)';
+            obj.FigureImage.ImageSource = '';
+            obj.FigureImage.Visible = 'off';
+            obj.WorkspaceTable.Data = cell(0, 6);
+            obj.XDrop.Items = {'(无)'};
+            obj.XDrop.Value = '(无)';
+            obj.YList.Items = {'(无)'};
+            obj.YList.Value = {'(无)'};
+            obj.PlotButton.Enable = 'off';
+            obj.SavePlotButton.Enable = 'off';
+            obj.ExportCsvButton.Enable = 'off';
+            obj.PlotStatus.Text = '运行脚本后，可选择工作区变量绘图。';
+            cla(obj.UIAxes);
+            title(obj.UIAxes, '运行后在这里绘图');
+        end
+
+        function refreshAll(obj)
+            obj.refreshResults();
+            obj.refreshWorkspace();
+            obj.refreshPlotVariables();
+        end
+
+        function refreshResults(obj)
+            r = obj.LastRun;
+            if ~isfield(r, 'figures') || isempty(r.figures)
+                obj.FigureDrop.Items = {'(无图)'};
+                obj.FigureDrop.Value = '(无图)';
+                obj.FigurePaths = {};
+                obj.FigureImage.ImageSource = '';
+                obj.FigureImage.Visible = 'off';
+                return;
+            end
+            items = cell(1, numel(r.figures));
+            obj.FigurePaths = cell(1, numel(r.figures));
+            for k = 1:numel(r.figures)
+                title = r.figures(k).title;
+                if isempty(title)
+                    title = sprintf('图 %d', k);
+                end
+                items{k} = sprintf('%d. %s', k, title);
+                obj.FigurePaths{k} = r.figures(k).path;
+            end
+            obj.FigureDrop.Items = items;
+            obj.FigureDrop.Value = items{1};
+            obj.showFigure();
+        end
+
+        function showFigure(obj)
+            if isempty(obj.FigurePaths)
+                obj.FigureImage.ImageSource = '';
+                obj.FigureImage.Visible = 'off';
+                return;
+            end
+            idx = find(strcmp(obj.FigureDrop.Items, obj.FigureDrop.Value), 1);
+            if isempty(idx) || idx > numel(obj.FigurePaths)
+                return;
+            end
+            path = obj.FigurePaths{idx};
+            if isfile(path)
+                obj.FigureImage.ImageSource = path;
+                obj.FigureImage.Visible = 'on';
+            else
+                obj.FigureImage.ImageSource = '';
+                obj.FigureImage.Visible = 'off';
+            end
+        end
+
+        function refreshWorkspace(obj)
+            ws = struct([]);
+            if isfield(obj.LastRun, 'workspace')
+                ws = obj.LastRun.workspace;
+            end
+            data = cell(numel(ws), 6);
+            for k = 1:numel(ws)
+                data{k,1} = ws(k).name;
+                data{k,2} = ws(k).class;
+                data{k,3} = ws(k).size;
+                data{k,4} = fmtValue(ws(k).min);
+                data{k,5} = fmtValue(ws(k).max);
+                data{k,6} = ws(k).preview;
+            end
+            obj.WorkspaceTable.Data = data;
+        end
+
+        function refreshPlotVariables(obj)
+            names = {};
+            if isstruct(obj.LastWorkspace)
+                fields = fieldnames(obj.LastWorkspace);
+                for k = 1:numel(fields)
+                    v = obj.LastWorkspace.(fields{k});
+                    if (isnumeric(v) || islogical(v)) && isvector(v) && ...
+                            numel(v) >= 2 && numel(v) <= 1e6 && isreal(v)
+                        names{end+1} = fields{k}; %#ok<AGROW>
+                    end
+                end
+            end
+            names = sort(names);
+            if isempty(names)
+                obj.XDrop.Items = {'(无)'};
+                obj.XDrop.Value = '(无)';
+                obj.YList.Items = {'(无)'};
+                obj.YList.Value = {'(无)'};
+                obj.PlotButton.Enable = 'off';
+                obj.SavePlotButton.Enable = 'off';
+                obj.ExportCsvButton.Enable = 'off';
+                obj.PlotStatus.Text = '没有可绘制的数值向量。';
+                return;
+            end
+            obj.XDrop.Items = names;
+            if any(strcmp(names, 't'))
+                obj.XDrop.Value = 't';
+            else
+                obj.XDrop.Value = names{1};
+            end
+            ys = names(~strcmp(names, obj.XDrop.Value));
+            if isempty(ys)
+                ys = names;
+            end
+            obj.YList.Items = ys;
+            obj.YList.Value = ys(1:min(2, numel(ys)));
+            obj.PlotButton.Enable = 'on';
+            obj.SavePlotButton.Enable = 'on';
+            obj.ExportCsvButton.Enable = 'on';
+            txt = strjoin(names, ', ');
+            if numel(txt) > 100
+                txt = [txt(1:97), '...'];
+            end
+            obj.PlotStatus.Text = ['可绘制变量：', txt];
+        end
+
+        function plotWorkspace(obj, xName, yNames)
+            if ischar(yNames) || isstring(yNames)
+                yNames = cellstr(yNames);
+            end
+            xName = char(xName);
+            if any(strcmp(obj.XDrop.Items, xName))
+                obj.XDrop.Value = xName;
+            else
+                return;
+            end
+            yNames = yNames(ismember(yNames, obj.YList.Items));
+            if isempty(yNames)
+                return;
+            end
+            obj.YList.Value = yNames;
+            obj.onPlot();
+        end
+
+        function onPlot(obj)
+            if ~isstruct(obj.LastWorkspace) || ...
+                    isempty(fieldnames(obj.LastWorkspace))
+                return;
+            end
+            xName = obj.XDrop.Value;
+            if isempty(xName) || strcmp(xName, '(无)')
+                return;
+            end
+            yNames = obj.YList.Value;
+            if ischar(yNames)
+                yNames = {yNames};
+            end
+            if isempty(yNames) || (numel(yNames) == 1 && ...
+                    strcmp(yNames{1}, '(无)'))
+                return;
+            end
+            x = obj.LastWorkspace.(xName);
+            cla(obj.UIAxes);
+            hold(obj.UIAxes, 'on');
+            leg = {};
+            for k = 1:numel(yNames)
+                if ~isfield(obj.LastWorkspace, yNames{k})
+                    continue;
+                end
+                y = obj.LastWorkspace.(yNames{k});
+                if numel(y) ~= numel(x)
+                    continue;
+                end
+                plot(obj.UIAxes, x, y, 'LineWidth', 1.2);
+                leg{end+1} = yNames{k}; %#ok<AGROW>
+            end
+            hold(obj.UIAxes, 'off');
+            grid(obj.UIAxes, 'on');
+            xlabel(obj.UIAxes, xName, 'Interpreter', 'none');
+            ylabel(obj.UIAxes, '值');
+            if ~isempty(leg)
+                legend(obj.UIAxes, leg, 'Interpreter', 'none', ...
+                    'Location', 'best');
+            end
+            title(obj.UIAxes, '工作区变量');
+            obj.PlotStatus.Text = sprintf('已绘制 %d 条曲线。', numel(leg));
+            drawnow;
+        end
+
+        function savePlot(obj, sourceFile, params)
+            if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
+                obj.alert('请先运行一次脚本。', '没有输出目录', ...
+                    'Icon', 'warning');
+                return;
+            end
+            path = fullfile(obj.OutputDir, 'figures', 'custom_plot.png');
+            try
+                exportgraphics(obj.UIAxes, path, 'Resolution', 150, ...
+                    'BackgroundColor', 'white');
+            catch err
+                obj.alert(err.message, '保存失败', ...
+                    'Icon', 'error');
+                return;
+            end
+            if isstruct(obj.LastRun) && isfield(obj.LastRun, 'figures')
+                keep = true(1, numel(obj.LastRun.figures));
+                for k = 1:numel(obj.LastRun.figures)
+                    if strcmp(obj.LastRun.figures(k).path, path)
+                        keep(k) = false;
+                    end
+                end
+                obj.LastRun.figures = obj.LastRun.figures(keep);
+            else
+                obj.LastRun.figures = struct('path', {}, ...
+                    'title', {}, 'figFile', {});
+            end
+            obj.LastRun.figures(end+1) = struct('path', path, ...
+                'title', '自定义工作区图', 'figFile', '');
+            obj.CustomPlotPath = path;
+            obj.refreshResults();
+            for k = 1:numel(obj.FigureDrop.Items)
+                if contains(obj.FigureDrop.Items{k}, '自定义工作区图')
+                    obj.FigureDrop.Value = obj.FigureDrop.Items{k};
+                    obj.showFigure();
+                    break;
+                end
+            end
+            obj.LastReport = mps.writeReport(obj.OutputDir, sourceFile, ...
+                params, obj.LastRun);
+            obj.ReportButton.Enable = 'on';
+            obj.StatusLabel.Text = '自定义图已保存，HTML 报告已更新。';
+        end
+
+        function exportCurveCsv(obj)
+            if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
+                obj.alert('请先运行一次脚本。', '没有输出目录', ...
+                    'Icon', 'warning');
+                return;
+            end
+            if ~isstruct(obj.LastWorkspace) || ...
+                    isempty(fieldnames(obj.LastWorkspace))
+                obj.alert('工作区里没有可导出的变量。', ...
+                    '没有数据', 'Icon', 'warning');
+                return;
+            end
+            xName = obj.XDrop.Value;
+            if isempty(xName) || strcmp(xName, '(无)')
+                return;
+            end
+            yNames = obj.YList.Value;
+            if ischar(yNames)
+                yNames = {yNames};
+            end
+            if isempty(yNames) || (numel(yNames) == 1 && ...
+                    strcmp(yNames{1}, '(无)'))
+                return;
+            end
+            x = obj.LastWorkspace.(xName);
+            cols = {x(:)};
+            names = {matlab.lang.makeValidName(xName)};
+            for k = 1:numel(yNames)
+                if ~isfield(obj.LastWorkspace, yNames{k})
+                    continue;
+                end
+                y = obj.LastWorkspace.(yNames{k});
+                if numel(y) ~= numel(x)
+                    continue;
+                end
+                cols{end+1} = y(:); %#ok<AGROW>
+                names{end+1} = matlab.lang.makeValidName(yNames{k}); %#ok<AGROW>
+            end
+            if numel(cols) < 2
+                obj.alert('X/Y 变量长度不一致，无法导出。', ...
+                    '导出失败', 'Icon', 'warning');
+                return;
+            end
+            names = matlab.lang.makeUniqueStrings(names);
+            data = [cols{:}];
+            csvPath = fullfile(obj.OutputDir, 'curve_data.csv');
+            try
+                T = array2table(data, 'VariableNames', names);
+                writetable(T, csvPath, 'Encoding', 'UTF-8');
+            catch err
+                obj.alert(err.message, '导出失败', ...
+                    'Icon', 'error');
+                return;
+            end
+            obj.StatusLabel.Text = sprintf('曲线数据已导出：%s', csvPath);
+            obj.alert(sprintf('已导出 %d 行 × %d 列：\n%s', ...
+                size(data, 1), size(data, 2), csvPath), ...
+                '导出成功', 'Icon', 'info');
+        end
+
+        function openReport(obj)
+            if isempty(obj.LastReport) || ~isfile(obj.LastReport)
+                obj.alert('还没有生成报告，请先运行。', ...
+                    '没有报告', 'Icon', 'warning');
+                return;
+            end
+            try
+                web(obj.LastReport, '-browser');
+            catch
+                try
+                    winopen(obj.LastReport);
+                catch err
+                    obj.alert(err.message, '打开失败', ...
+                        'Icon', 'error');
+                end
+            end
+        end
+
+        function openFolder(obj)
+            if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
+                obj.alert('还没有输出目录，请先运行。', ...
+                    '没有输出', 'Icon', 'warning');
+                return;
+            end
+            try
+                mps.openPath(obj.OutputDir);
+            catch err
+                obj.alert(err.message, '打开失败', ...
+                    'Icon', 'error');
+            end
+        end
+
+        function closeFigures(obj)
+            if isfield(obj.LastRun, 'figureHandles')
+                hs = obj.LastRun.figureHandles;
+                for k = 1:numel(hs)
+                    if isvalid(hs(k))
+                        close(hs(k));
+                    end
+                end
+                obj.LastRun.figureHandles = gobjects(0);
+            end
+            obj.StatusLabel.Text = '已关闭本次运行产生的图窗。';
+        end
+
+        function alert(obj, message, title, varargin)
+            if strcmp(obj.UIFigure.Visible, 'on')
+                uialert(obj.UIFigure, message, title, varargin{:});
+            else
+                obj.StatusLabel.Text = char(message);
+            end
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function s = fmtValue(v)
+    if isempty(v)
+        s = '';
+    elseif isnumeric(v) || islogical(v)
+        try
+            s = num2str(v, '%.6g');
+        catch
+            s = num2str(v);
+        end
+    else
+        s = char(v);
+    end
+end

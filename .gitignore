@@ -1,5 +1,6 @@
 parameter_studio_runs/
 mps_run_*.m
 *_session.json
+*_manual.json
 *.asv
 *.autosave

@@ -73,6 +73,33 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
             'new', newText, 'line', p.line); %#ok<AGROW>
     end
 
+    % User-added parameters are prepended as assignments.  They have no
+    % source position, so they cannot participate in the literal edits.
+    manualLines = {};
+    for k = 1:numel(params)
+        p = params(k);
+        if ~isfield(p, 'manual') || ~logical(p.manual)
+            continue;
+        end
+        if ~isfield(p, 'use') || ~p.use
+            continue;
+        end
+        value = strtrim(char(p.newValue));
+        if isfield(p, 'locked') && p.locked
+            value = strtrim(char(p.value));
+        end
+        if isempty(value) || ~isvarname(p.name)
+            continue;
+        end
+        [ok, ~] = mps.validateValue(value);
+        if ~ok
+            continue;
+        end
+        manualLines{end+1} = sprintf('%s = %s;', p.name, value); %#ok<AGROW>
+        applied(end+1) = struct('name', p.name, 'old', p.value, ...
+            'new', value, 'line', 0); %#ok<AGROW>
+    end
+
     % Apply from the end of the file backwards so line/column positions stay
     % valid.  Within a line, apply right-to-left.
     if ~isempty(edits)
@@ -102,6 +129,10 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
     outText = strjoin(lines, sprintf('\n'));
     if trailingNewline
         outText = [outText, sprintf('\n')];
+    end
+    if ~isempty(manualLines)
+        prefix = [strjoin(manualLines, sprintf('\n')), sprintf('\n')];
+        outText = [prefix, outText];
     end
     if ~isempty(footer)
         if ~isempty(outText) && outText(end) ~= sprintf('\n')

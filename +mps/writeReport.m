@@ -305,6 +305,8 @@ function s = categoryLabel(c)
         case 'control', s = '控制流';
         case 'function', s = '函数体';
         case 'annotated', s = '注释标记';
+        case 'ignored', s = '已忽略';
+        case 'manual', s = '手动参数';
         otherwise, s = c;
     end
 end

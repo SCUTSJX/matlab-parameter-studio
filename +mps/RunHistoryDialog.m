@@ -35,6 +35,7 @@ classdef RunHistoryDialog < handle
         SetAButton
         SetBButton
         CompareButton
+        CleanButton
         SelectedRun = 0
         AIndex = 0
         BIndex = 0
@@ -78,12 +79,15 @@ classdef RunHistoryDialog < handle
             %REFRESH Re-scan the run folder and rebuild the table.
             dlg.Runs = mps.listRuns(dlg.Root, 'SourceFile', dlg.SourceFile);
             if isempty(dlg.Runs)
-                dlg.Table.Data = cell(0, 7);
+                dlg.Table.Data = cell(0, 8);
                 dlg.SelectedRun = 0;
+                dlg.HeaderLabel.Text = sprintf('%s · 0 次运行', dlg.Root);
             else
-                data = cell(numel(dlg.Runs), 7);
+                data = cell(numel(dlg.Runs), 8);
+                totalBytes = 0;
                 for k = 1:numel(dlg.Runs)
                     r = dlg.Runs(k);
+                    totalBytes = totalBytes + r.bytes;
                     data{k,1} = r.created;
                     if r.isSweep
                         data{k,2} = '批量扫描';
@@ -98,9 +102,12 @@ classdef RunHistoryDialog < handle
                         data{k,5} = sprintf('%.2f', r.elapsed);
                     end
                     data{k,6} = r.figureCount;
-                    data{k,7} = r.name;
+                    data{k,7} = fmtBytes(r.bytes);
+                    data{k,8} = r.name;
                 end
                 dlg.Table.Data = data;
+                dlg.HeaderLabel.Text = sprintf('%s · %d 次运行 · %s', ...
+                    dlg.Root, numel(dlg.Runs), fmtBytes(totalBytes));
                 dlg.SelectedRun = 1;
                 try
                     dlg.Table.Selection = [1 1];
@@ -126,7 +133,7 @@ classdef RunHistoryDialog < handle
             dlg.UIFigure.CloseRequestFcn = @(s, e) dlg.delete();
 
             root = uigridlayout(dlg.UIFigure, [5 1]);
-            root.RowHeight = {24, '1x', 22, 22, 58};
+            root.RowHeight = {24, '1x', 22, 22, 89};
             root.Padding = [12 12 12 12];
             root.RowSpacing = 8;
 
@@ -142,9 +149,9 @@ classdef RunHistoryDialog < handle
 
             dlg.Table = uitable(root, ...
                 'ColumnName', {'时间', '类型', '状态', '参数变化', ...
-                '耗时 (s)', '图', '目录'}, ...
+                '耗时 (s)', '图', '大小', '目录'}, ...
                 'ColumnEditable', false, ...
-                'ColumnWidth', {136, 72, 52, '1x', 62, 32, 170}, ...
+                'ColumnWidth', {136, 72, 52, '1x', 62, 32, 64, 150}, ...
                 'RowName', [], ...
                 'CellSelectionCallback', @(s, e) dlg.onTableSelect(e));
             dlg.Table.Layout.Row = 2;
@@ -169,9 +176,9 @@ classdef RunHistoryDialog < handle
             dlg.BLabel = uilabel(ab, 'Text', 'B（当前）: 未选择');
             dlg.BLabel.Layout.Column = 2;
 
-            actions = uigridlayout(root, [2 4]);
+            actions = uigridlayout(root, [3 4]);
             actions.Layout.Row = 5;
-            actions.RowHeight = {26, 26};
+            actions.RowHeight = {26, 26, 26};
             actions.ColumnWidth = {'1x', '1x', '1x', '1x'};
             actions.Padding = [0 0 0 0];
             actions.RowSpacing = 5;
@@ -194,6 +201,10 @@ classdef RunHistoryDialog < handle
                 'ButtonPushedFcn', @(s, e) dlg.onCompare());
             uibutton(actions, 'Text', '关闭', ...
                 'ButtonPushedFcn', @(s, e) dlg.delete());
+            dlg.CleanButton = uibutton(actions, 'Text', '清理旧运行...', ...
+                'ButtonPushedFcn', @(s, e) dlg.onClean());
+            dlg.CleanButton.Layout.Row = 3;
+            dlg.CleanButton.Layout.Column = 1;
         end
 
         % -----------------------------------------------------------------
@@ -354,6 +365,66 @@ classdef RunHistoryDialog < handle
                 dlg.CompareButton.Enable = 'on';
             else
                 dlg.CompareButton.Enable = 'off';
+            end
+            if numel(dlg.Runs) >= 2
+                dlg.CleanButton.Enable = 'on';
+            else
+                dlg.CleanButton.Enable = 'off';
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function onClean(dlg)
+            if numel(dlg.Runs) < 2
+                return;
+            end
+            choice = uiconfirm(dlg.UIFigure, ...
+                '保留最近的运行，删除更早的结果（当前正在使用的运行不会被删除）。', ...
+                '清理旧运行', ...
+                'Options', {'保留最近 10 次', '保留最近 30 次', '取消'}, ...
+                'DefaultOption', 3, 'CancelOption', 3);
+            switch choice
+                case '保留最近 10 次'
+                    keepN = 10;
+                case '保留最近 30 次'
+                    keepN = 30;
+                otherwise
+                    return;
+            end
+            if numel(dlg.Runs) <= keepN
+                dlg.StatusLabel.Text = sprintf( ...
+                    '当前只有 %d 次运行，不需要清理。', numel(dlg.Runs));
+                return;
+            end
+            removeIdx = (keepN + 1):numel(dlg.Runs);
+            removeIdx = removeIdx(~strcmpi({dlg.Runs(removeIdx).path}, ...
+                dlg.CurrentOutDir));
+            if isempty(removeIdx)
+                return;
+            end
+            confirm = uiconfirm(dlg.UIFigure, sprintf( ...
+                '将删除 %d 次旧运行，保留最近 %d 次。是否继续？', ...
+                numel(removeIdx), keepN), '确认清理', ...
+                'Options', {'删除', '取消'}, ...
+                'DefaultOption', 2, 'CancelOption', 2);
+            if ~strcmp(confirm, '删除')
+                return;
+            end
+            failed = 0;
+            for k = removeIdx
+                try
+                    rmdir(dlg.Runs(k).path, 's');
+                catch
+                    failed = failed + 1;
+                end
+            end
+            dlg.refresh();
+            if failed > 0
+                dlg.StatusLabel.Text = sprintf( ...
+                    '已删除旧运行，%d 个文件夹删除失败。', failed);
+            else
+                dlg.StatusLabel.Text = sprintf( ...
+                    '已删除 %d 次旧运行。', numel(removeIdx));
             end
         end
 
@@ -528,5 +599,20 @@ function s = statusText(ok)
         s = '成功';
     else
         s = '失败';
+    end
+end
+
+% -------------------------------------------------------------------------
+function s = fmtBytes(bytes)
+    if isempty(bytes) || isnan(bytes)
+        s = '-';
+    elseif bytes >= 1024^3
+        s = sprintf('%.2f GB', bytes / 1024^3);
+    elseif bytes >= 1024^2
+        s = sprintf('%.1f MB', bytes / 1024^2);
+    elseif bytes >= 1024
+        s = sprintf('%.0f KB', bytes / 1024);
+    else
+        s = sprintf('%d B', bytes);
     end
 end

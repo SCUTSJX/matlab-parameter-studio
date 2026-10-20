@@ -29,8 +29,14 @@ function ws = summarizeWorkspace(S)
         if isnumeric(v) || islogical(v)
             if ~isempty(v)
                 try
-                    mn = min(v(:));
-                    mx = max(v(:));
+                    if numel(v) <= 5e6
+                        mn = min(v(:));
+                        mx = max(v(:));
+                    else
+                        % Avoid materializing a full column copy for big arrays.
+                        mn = min(v, [], 'all');
+                        mx = max(v, [], 'all');
+                    end
                 catch
                 end
             end
@@ -42,12 +48,16 @@ function ws = summarizeWorkspace(S)
                 preview = sprintf('%s %s', szStr, cls);
             end
         elseif ischar(v) || isstring(v)
-            preview = char(v);
-            if numel(preview) > 80
-                preview = [preview(1:77), '...'];
+            if isstring(v) && ~isscalar(v)
+                preview = sprintf('string [%s]', szStr);
+            else
+                preview = char(v);
+                if numel(preview) > 80
+                    preview = [preview(1:77), '...'];
+                end
+                preview = strrep(preview, sprintf('\n'), ' ');
+                preview = strrep(preview, sprintf('\r'), ' ');
             end
-            preview = strrep(preview, sprintf('\n'), ' ');
-            preview = strrep(preview, sprintf('\r'), ' ');
         elseif isstruct(v)
             preview = sprintf('struct (%d fields)', numel(fieldnames(v)));
         elseif iscell(v)

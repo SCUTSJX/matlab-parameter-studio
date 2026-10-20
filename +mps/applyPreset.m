@@ -55,6 +55,9 @@ function [params, stats] = applyPreset(params, preset)
         end
 
         params(target).use = logical(v.use);
+        if isfield(params, 'ignored') && params(target).ignored
+            params(target).use = false;
+        end
         if v.locked
             params(target).locked = true;
             params(target).newValue = params(target).value;

@@ -67,6 +67,39 @@ function run_tests()
     fprintf('  run: %d figures, %d workspace variables\n', ...
         numel(r.figures), numel(r.workspace));
 
+    limitedDir = fullfile(tempdir, 'mps_limited_run');
+    if isfolder(limitedDir)
+        rmdir(limitedDir, 's');
+    end
+    rLimited = mps.runScript(demo, scriptPath, limitedDir, ...
+        'MaxVariableMB', 0, 'MaxTotalMB', 0.001);
+    assert(rLimited.ok, rLimited.error);
+    assert(isempty(fieldnames(rLimited.workspaceData)), ...
+        'workspace capture limit should skip oversized variables');
+    fprintf('  workspace capture limit: ok\n');
+
+    % --- 3b. Reused figure capture ---------------------------------------
+    reuseFig = figure(1);
+    clf(reuseFig);
+    reuseAx = axes(reuseFig); %#ok<LAXES>
+    plot(reuseAx, 1:3);
+    drawnow;
+    reuseScript = fullfile(tempdir, 'mps_reuse_figure.m');
+    fid = fopen(reuseScript, 'w', 'n', 'UTF-8');
+    fprintf(fid, 'figure(1); clf; plot(1:5); title(''reused'');\n');
+    fclose(fid);
+    reuseDir = fullfile(tempdir, 'mps_reuse_figure_run');
+    if isfolder(reuseDir)
+        rmdir(reuseDir, 's');
+    end
+    rReuse = mps.runScript(reuseScript, reuseScript, reuseDir);
+    assert(rReuse.ok, rReuse.error);
+    assert(numel(rReuse.figures) == 1, ...
+        'a reused, changed figure should be captured');
+    close(reuseFig);
+    delete(reuseScript);
+    fprintf('  reused figure capture: ok\n');
+
     % --- 4. Multi-line nested structs ------------------------------------
     structFile = fullfile(tempdir, 'mps_struct_test2.m');
     fid = fopen(structFile, 'w', 'n', 'UTF-8');
@@ -89,6 +122,50 @@ function run_tests()
     assert(all(strcmp({p3.category}, 'annotated')), ...
         '@param category should be annotated');
     fprintf('  @param annotations: ok\n');
+
+    % --- 5b. % @ignore ---------------------------------------------------
+    ignoreFile = fullfile(tempdir, 'mps_ignore_test.m');
+    fid = fopen(ignoreFile, 'w', 'n', 'UTF-8');
+    fprintf(fid, 'x = 1; %% @ignore\ny = 2;\n');
+    fclose(fid);
+    pIgn = mps.scan(ignoreFile);
+    xi = find(strcmp({pIgn.name}, 'x'), 1);
+    assert(~isempty(xi), '@ignore parameter should still be detected');
+    assert(pIgn(xi).ignored, '@ignore should mark the parameter');
+    assert(~pIgn(xi).use, '@ignore parameter must not be selected');
+    assert(strcmp(pIgn(xi).category, 'ignored'), ...
+        '@ignore should set the ignored category');
+    delete(ignoreFile);
+    fprintf('  @ignore: ok\n');
+
+    % --- 5c. Manual parameters -------------------------------------------
+    manualDemo = fullfile(tempdir, 'mps_manual_demo.m');
+    fid = fopen(manualDemo, 'w', 'n', 'UTF-8');
+    fprintf(fid, 'y = x + 1;\n');
+    fclose(fid);
+    pManual = mps.scan(manualDemo);
+    manualParam = mps.makeManualParam(manualDemo, 'x', '5', '手动输入', '');
+    pManual = [pManual, manualParam];
+    mps.writeManualParams(manualDemo, pManual);
+    loadedManual = mps.readManualParams(manualDemo);
+    assert(numel(loadedManual) == 1, 'manual parameter should round trip');
+    manualText = mps.applyEdits(manualDemo, pManual, '');
+    assert(contains(manualText, 'x = 5;'), ...
+        'manual parameter should be prepended');
+    manualExec = mps.RunExecutor(manualDemo, pManual, false);
+    manualExec.Progress = @(msg) [];
+    manualRun = manualExec.run();
+    assert(manualRun.run.ok, 'manual parameter run failed');
+    assert(abs(manualRun.run.workspaceData.x - 5) < 1e-12 && ...
+        abs(manualRun.run.workspaceData.y - 6) < 1e-12, ...
+        'manual parameter should be visible to the script');
+    manualRoot = fullfile(fileparts(manualDemo), 'parameter_studio_runs');
+    if isfolder(manualRoot)
+        rmdir(manualRoot, 's');
+    end
+    delete(manualDemo);
+    delete(mps.manualParamsPath(manualDemo));
+    fprintf('  manual parameters: ok\n');
 
     % --- 6. AI annotation template + import ------------------------------
     annoPath = fullfile(tempdir, 'mps_annotation_template.json');
@@ -390,6 +467,7 @@ function run_tests()
     assert(numel(history) == 2, 'history should list two runs');
     assert(all([history.canLoad]), 'history runs should be loadable');
     assert(all([history.canCompare]), 'history runs should be comparable');
+    assert(all([history.bytes] > 0), 'history should report run sizes');
     assert(~isempty(strfind(history(1).paramSummary, 'k=')), ...
         'history summary should mention changed k');
 
@@ -511,11 +589,141 @@ function run_tests()
     delete(stampFile);
     fprintf('  diff preview + source stamp: ok\n');
 
-    % --- 20. App UI construction -----------------------------------------
+    % --- 20. RunExecutor -------------------------------------------------
+    execDemo = fullfile(tempdir, 'mps_executor_demo.m');
+    copyfile(demo, execDemo);
+    pExec = mps.scan(execDemo);
+    for k = 1:numel(pExec)
+        if strcmp(pExec(k).name, 'k')
+            pExec(k).newValue = '8';
+            pExec(k).use = true;
+        end
+    end
+    ex = mps.RunExecutor(execDemo, pExec, false);
+    ex.Progress = @(msg) [];
+    execOut = ex.run();
+    assert(execOut.run.ok, 'RunExecutor run failed');
+    assert(abs(execOut.run.workspaceData.k - 8) < 1e-12, ...
+        'RunExecutor should apply k=8');
+    assert(isfile(execOut.reportPath), 'RunExecutor report missing');
+    execRoot = fullfile(fileparts(execDemo), 'parameter_studio_runs');
+    if isfolder(execRoot)
+        rmdir(execRoot, 's');
+    end
+    delete(execDemo);
+    fprintf('  run executor: ok\n');
+
+    % --- 21. SweepRunner -------------------------------------------------
+    sweepDemo = fullfile(tempdir, 'mps_sweep_runner_demo.m');
+    copyfile(demo, sweepDemo);
+    pRun = mps.scan(sweepDemo);
+    kiRun = find(strcmp({pRun.name}, 'k'), 1);
+    runner = mps.SweepRunner(sweepDemo, pRun, kiRun, {[4 8]}, ...
+        true, 't', {'y'}, false);
+    runner.Progress = @(fraction, message) [];
+    sweepOut = runner.run();
+    assert(sweepOut.ok, 'SweepRunner failed');
+    assert(sweepOut.count == 2, 'SweepRunner should run two scenarios');
+    assert(isfile(sweepOut.report), 'SweepRunner report missing');
+    assert(isfile(sweepOut.metricsPath), 'SweepRunner metrics CSV missing');
+    assert(isfile(sweepOut.overlayPath), 'SweepRunner overlay missing');
+    sweepRootOut = fullfile(fileparts(sweepDemo), 'parameter_studio_runs');
+    if isfolder(sweepRootOut)
+        rmdir(sweepRootOut, 's');
+    end
+    delete(sweepDemo);
+    fprintf('  sweep runner: ok\n');
+
+    if license('test', 'Distrib_Computing_Toolbox')
+        parallelDemo = fullfile(tempdir, 'mps_sweep_parallel_demo.m');
+        copyfile(demo, parallelDemo);
+        pPar = mps.scan(parallelDemo);
+        kiPar = find(strcmp({pPar.name}, 'k'), 1);
+        runnerPar = mps.SweepRunner(parallelDemo, pPar, kiPar, ...
+            {[4 8]}, true, 't', {'y'}, false);
+        runnerPar.Parallel = true;
+        runnerPar.Progress = @(fraction, message) [];
+        parOut = runnerPar.run();
+        assert(parOut.ok, 'parallel sweep failed');
+        assert(parOut.count == 2, 'parallel sweep should run two scenarios');
+        assert(isfile(parOut.report), 'parallel sweep report missing');
+        assert(isfile(parOut.metricsPath), 'parallel sweep metrics missing');
+        parRoot = fullfile(fileparts(parallelDemo), 'parameter_studio_runs');
+        if isfolder(parRoot)
+            rmdir(parRoot, 's');
+        end
+        delete(parallelDemo);
+        fprintf('  parallel sweep: ok\n');
+    end
+
+    % --- 22. Interactive-call detection + sweep cancel -------------------
+    interactiveFile = fullfile(tempdir, 'mps_interactive_test.m');
+    fid = fopen(interactiveFile, 'w', 'n', 'UTF-8');
+    fprintf(fid, ['%% input(''fake'');\n' ...
+        's = ''input(''ignored'')'';\n' ...
+        'answer = input(''value? '');\n' ...
+        'pause(0.1);\n' ...
+        'keyboard;\n']);
+    fclose(fid);
+    calls = mps.detectInteractiveCalls(interactiveFile);
+    names = {calls.name};
+    assert(any(strcmp(names, 'input')), 'input() should be detected');
+    assert(any(strcmp(names, 'pause')), 'pause() should be detected');
+    assert(any(strcmp(names, 'keyboard')), 'keyboard should be detected');
+    assert(sum(strcmp(names, 'input')) == 1, ...
+        'commented/string input calls should be ignored');
+    delete(interactiveFile);
+
+    sweepDemo2 = fullfile(tempdir, 'mps_sweep_cancel_demo.m');
+    copyfile(demo, sweepDemo2);
+    pCancel = mps.scan(sweepDemo2);
+    kiCancel = find(strcmp({pCancel.name}, 'k'), 1);
+    runnerCancel = mps.SweepRunner(sweepDemo2, pCancel, kiCancel, ...
+        {[4 8]}, false, '', {}, false);
+    runnerCancel.ShouldCancel = @() true;
+    cancelOut = runnerCancel.run();
+    assert(cancelOut.canceled, 'sweep runner should report cancellation');
+    assert(cancelOut.count == 0, 'cancelled sweep should run no scenarios');
+    cancelRoot = fullfile(fileparts(sweepDemo2), 'parameter_studio_runs');
+    if isfolder(cancelRoot)
+        rmdir(cancelRoot, 's');
+    end
+    delete(sweepDemo2);
+    fprintf('  interactive detection + sweep cancel: ok\n');
+
+    % --- 23. App UI construction -----------------------------------------
     app = mps.App('Visible', 'off');
     app.loadFile(demo);
     assert(~isempty(app.Params), 'app should load the demo parameters');
+    ki = find(strcmp({app.Params.name}, 'k'), 1);
+    app.toggleLock('k');
+    assert(app.Params(ki).locked, 'public toggleLock should lock k');
+    app.toggleLock('k');
+    assert(~app.Params(ki).locked, 'public toggleLock should unlock k');
+    app.Params(1).description = '测试注释';
+    app.clearAnnotations();
+    assert(isempty(app.Params(1).description), ...
+        'clearAnnotations should clear descriptions');
+
+    manualLoad = fullfile(tempdir, 'mps_manual_load.m');
+    copyfile(demo, manualLoad);
+    pLoad = mps.scan(manualLoad);
+    pLoad = [pLoad, mps.makeManualParam(manualLoad, 'gain', '3')];
+    mps.writeManualParams(manualLoad, pLoad);
+    app.loadFile(manualLoad);
+    assert(any(strcmp({app.Params.name}, 'gain')), ...
+        'loadFile should restore manual parameters');
     delete(app);
+    if isfile(mps.sessionPath(manualLoad))
+        delete(mps.sessionPath(manualLoad));
+    end
+    if isfile(mps.manualParamsPath(manualLoad))
+        delete(mps.manualParamsPath(manualLoad));
+    end
+    delete(manualLoad);
+    if isfile(mps.sessionPath(demo))
+        delete(mps.sessionPath(demo));
+    end
     fprintf('  app UI: ok\n');
 
     fprintf('ALL TESTS PASSED\n');

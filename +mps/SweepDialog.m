@@ -22,9 +22,11 @@ classdef SweepDialog < handle
         Table
         SearchField
         ScenarioLabel
+        MaxScenariosSpinner
         OverlayCheck
         XDrop
         YList
+        ParallelCheck
         StartButton
         CancelButton
         VisibleIdx = []
@@ -96,17 +98,22 @@ classdef SweepDialog < handle
                 '给要扫描的参数填“扫描值”，例如 1,2,4 或 1:0.5:5；留空表示不扫描该参数。', ...
                 'FontWeight', 'bold');
 
-            top = uigridlayout(root, [1 3]);
+            top = uigridlayout(root, [1 4]);
             top.Layout.Row = 2;
-            top.ColumnWidth = {220, '1x', '1x'};
+            top.ColumnWidth = {220, '1x', 100, 140};
             top.Padding = [0 0 0 0];
             dlg.SearchField = uieditfield(top, 'text', ...
                 'Placeholder', '搜索参数...', ...
                 'ValueChangedFcn', @(s, e) dlg.refreshTable());
             dlg.SearchField.Layout.Column = 1;
+            dlg.MaxScenariosSpinner = uispinner(top, ...
+                'Limits', [1 500], 'Value', dlg.MaxScenarios, ...
+                'Tooltip', '扫描组数上限（防止误填出几百次运行）', ...
+                'ValueChangedFcn', @(s, e) dlg.updateCount());
+            dlg.MaxScenariosSpinner.Layout.Column = 3;
             dlg.ScenarioLabel = uilabel(top, 'Text', '预计 0 组', ...
                 'HorizontalAlignment', 'right', 'FontWeight', 'bold');
-            dlg.ScenarioLabel.Layout.Column = 3;
+            dlg.ScenarioLabel.Layout.Column = 4;
 
             dlg.Table = uitable(root, ...
                 'ColumnName', {'参数', '当前值', '扫描值', '说明'}, ...
@@ -155,6 +162,12 @@ classdef SweepDialog < handle
             buttons.Layout.Row = 5;
             buttons.ColumnWidth = {'1x', 90, 120};
             buttons.Padding = [0 0 0 0];
+            dlg.ParallelCheck = uicheckbox(buttons, ...
+                'Text', '并行运行（需要 Parallel Computing Toolbox）', ...
+                'Value', false);
+            if ~license('test', 'Distrib_Computing_Toolbox')
+                dlg.ParallelCheck.Enable = 'off';
+            end
             dlg.CancelButton = uibutton(buttons, 'Text', '取消', ...
                 'ButtonPushedFcn', @(s, e) dlg.onCancel());
             dlg.CancelButton.Layout.Column = 2;
@@ -219,6 +232,10 @@ classdef SweepDialog < handle
         end
 
         function updateCount(dlg)
+            if ~isempty(dlg.MaxScenariosSpinner) && ...
+                    isvalid(dlg.MaxScenariosSpinner)
+                dlg.MaxScenarios = round(dlg.MaxScenariosSpinner.Value);
+            end
             total = 1;
             anyActive = false;
             bad = false;
@@ -339,7 +356,9 @@ classdef SweepDialog < handle
 
             dlg.Result = struct('activeIdx', activeIdx, ...
                 'values', {values}, 'scenarios', scenarios, ...
-                'overlay', overlay, 'xName', xName, 'yNames', {yNames});
+                'overlay', overlay, 'xName', xName, 'yNames', {yNames}, ...
+                'parallel', logical(dlg.ParallelCheck.Value), ...
+                'maxScenarios', dlg.MaxScenarios);
             delete(dlg.UIFigure);
         end
 

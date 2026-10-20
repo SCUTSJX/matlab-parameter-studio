@@ -73,6 +73,7 @@ function runs = listRuns(root, varargin)
         elseif isfile(sweepReportPath)
             r.reportPath = sweepReportPath;
         end
+        r.bytes = folderBytes(runPath);
         r.paramsPath = '';
         if isfile(paramsPath)
             r.paramsPath = paramsPath;
@@ -142,7 +143,7 @@ function runs = emptyRuns()
     runs = struct('name', {}, 'path', {}, 'created', {}, 'sortKey', {}, ...
         'isSweep', {}, 'ok', {}, 'error', {}, 'elapsed', {}, ...
         'figureCount', {}, 'changedCount', {}, 'paramSummary', {}, ...
-        'sourceFile', {}, 'reportPath', {}, 'sweepReportPath', {}, ...
+        'bytes', {}, 'sourceFile', {}, 'reportPath', {}, 'sweepReportPath', {}, ...
         'paramsPath', {}, 'workspacePath', {}, 'canLoad', {}, ...
         'canCompare', {});
 end
@@ -273,6 +274,20 @@ function [summary, count, failures, elapsed, figures] = ...
     end
     if ~isempty(failures) && failures > 0
         summary = sprintf('%s（%d 组失败）', summary, failures);
+    end
+end
+
+% -------------------------------------------------------------------------
+function bytes = folderBytes(folder)
+    bytes = 0;
+    try
+        items = dir(fullfile(folder, '**', '*'));
+        for k = 1:numel(items)
+            if ~items(k).isdir
+                bytes = bytes + items(k).bytes;
+            end
+        end
+    catch
     end
 end
 

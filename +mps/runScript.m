@@ -1,15 +1,29 @@
-function result = runScript(sourceFile, scriptPath, outDir)
+function result = runScript(sourceFile, scriptPath, outDir, varargin)
 %RUNSCRIPT Execute a generated script and capture figures, workspace and log.
 %
 %   result = mps.runScript(sourceFile, scriptPath, outDir)
+%   result = mps.runScript(..., 'MaxVariableMB', 100, 'MaxTotalMB', 512)
 %
 %   sourceFile is the original script (for metadata), scriptPath is the
-%   generated copy to execute, and outDir is the result folder.
+%   generated copy to execute, and outDir is the result folder.  The size
+%   options protect large simulation workspaces from exhausting memory.
 %
 %   The app protects its own uifigure with HandleVisibility='off', so a
 %   script that calls "close all" does not close the studio.  In addition,
 %   mps.applyEdits normally replaces "close all" with a harmless statement
 %   in the generated copy.
+
+    maxVariableMB = 100;
+    maxTotalMB = 512;
+    for k = 1:2:numel(varargin)
+        if k + 1 > numel(varargin), break; end
+        switch lower(char(varargin{k}))
+            case 'maxvariablemb'
+                maxVariableMB = varargin{k+1};
+            case 'maxtotalmb'
+                maxTotalMB = varargin{k+1};
+        end
+    end
 
     t0 = tic;
     result = struct();
@@ -35,6 +49,10 @@ function result = runScript(sourceFile, scriptPath, outDir)
     end
 
     oldFigs = findall(groot, 'Type', 'figure');
+    oldSignatures = cell(1, numel(oldFigs));
+    for k = 1:numel(oldFigs)
+        oldSignatures{k} = mps.figureSignature(oldFigs(k));
+    end
     oldPwd = pwd;
     logFile = fullfile(outDir, 'console.log');
 
@@ -44,7 +62,7 @@ function result = runScript(sourceFile, scriptPath, outDir)
     cleanupObj = onCleanup(@() cleanupRun()); %#ok<NASGU>
 
     try
-        ws = mps.executeScript(scriptPath);
+        ws = mps.executeScript(scriptPath, maxVariableMB, maxTotalMB);
         result.workspaceData = ws.data;
         result.workspace = mps.summarizeWorkspace(ws.data);
         result.ok = ws.ok;
@@ -60,12 +78,21 @@ function result = runScript(sourceFile, scriptPath, outDir)
     catch
     end
 
-    % Capture figures that appeared during this run.
+    % Capture figures that appeared during this run, plus existing figures
+    % that the script reused and changed (figure(1); clf; plot(...)).
     allFigs = findall(groot, 'Type', 'figure');
     newFigs = gobjects(0);
     for k = 1:numel(allFigs)
         f = allFigs(k);
         if isempty(oldFigs) || ~any(f == oldFigs)
+            newFigs(end+1) = f; %#ok<AGROW>
+            continue;
+        end
+        oldIdx = find(f == oldFigs, 1);
+        if isempty(oldIdx)
+            continue;
+        end
+        if ~strcmp(oldSignatures{oldIdx}, mps.figureSignature(f))
             newFigs(end+1) = f; %#ok<AGROW>
         end
     end

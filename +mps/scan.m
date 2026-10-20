@@ -173,6 +173,8 @@ function params = scan(filePath, varargin)
             p.description = '';
             p.unit = '';
             p.locked = false;
+            p.ignored = false;
+            p.manual = false;
 
             % --- 1. Struct field names are the strongest signal. ---------
             if isKey(structMap, lit.start)
@@ -234,8 +236,19 @@ function params = scan(filePath, varargin)
                 p.name = regexprep(p.name, '^@param\s*', '');
             end
 
-            p.use = p.score >= minScore && ~ismember(p.category, ...
-                {'style','layout','size','index','control'});
+            % % @ignore suppresses a literal from the recommended list and
+            % from runs; it still appears in the "全部数字" view.
+            ignored = contains(note, '@ignore') || ...
+                (pl - lastCommentLine <= 2 && contains(lastComment, '@ignore'));
+            if ignored
+                p.ignored = true;
+                p.category = 'ignored';
+                p.score = -Inf;
+                p.use = false;
+            else
+                p.use = p.score >= minScore && ~ismember(p.category, ...
+                    {'style','layout','size','index','control'});
+            end
             p.isChanged = false;
 
             params(end+1) = p; %#ok<AGROW>
@@ -256,7 +269,8 @@ function p = emptyParams()
         'line', {}, 'colStart', {}, 'colEnd', {}, 'score', {}, ...
         'category', {}, 'note', {}, 'context', {}, 'use', {}, ...
         'isChanged', {}, 'sourceFile', {}, 'literalIndex', {}, ...
-        'isLogical', {}, 'description', {}, 'unit', {}, 'locked', {});
+        'isLogical', {}, 'description', {}, 'unit', {}, 'locked', {}, ...
+        'ignored', {}, 'manual', {});
 end
 
 % -------------------------------------------------------------------------
