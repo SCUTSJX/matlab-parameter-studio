@@ -606,6 +606,7 @@ classdef App < handle
                 app.SourceFile, app.Params);
             callbacks.onExportCurve = @(s, e) app.Results.exportCurveCsv();
             callbacks.onKeyPress = @(e) app.SourceCtl.handleKeyPress(e);
+            callbacks.onClose = @(s, e) app.onClose();
         end
 
         function changed = sourceChanged(app)
