@@ -7,6 +7,7 @@ classdef App < handle
     properties
         UIFigure
         SourceFile = ''
+        EntryFile = ''
         SourceStamp = struct()
         Results
         MaxVariableMB = 100
@@ -38,7 +39,7 @@ classdef App < handle
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
         BackgroundCheck
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
-        PresetDeleteButton, SweepButton, BulkButton, ManualButton
+        PresetDeleteButton, SweepButton, BulkButton, ManualButton, EntryButton
         UndoButton, RedoButton
         IsFunctionFile = false
         Save
@@ -185,6 +186,7 @@ classdef App < handle
             end
 
             app.SourceFile = filePath;
+            app.EntryFile = '';
             app.Params = p;
             app.LastAnnotations = struct([]);
             app.AnnotationFile = '';
@@ -231,9 +233,10 @@ classdef App < handle
 
             app.RescanButton.Enable = 'on';
             app.RunButton.Enable = 'on';
-            if app.IsFunctionFile
+            if app.IsFunctionFile && isempty(app.EntryFile)
                 app.RunButton.Enable = 'off';
             end
+            app.EntryButton.Enable = 'on';
             app.SaveButton.Enable = 'on';
             app.ExportButton.Enable = 'on';
             if app.IsFunctionFile
@@ -271,7 +274,7 @@ classdef App < handle
             end
             if app.IsFunctionFile
                 app.StatusLabel.Text = sprintf( ...
-                    '已载入函数文件：识别 %d 个数字（%d 个推荐），可保存调参后的函数，但不能直接运行%s%s。', ...
+                    '已载入函数文件：识别 %d 个数字（%d 个推荐）%s%s。这是配置函数时，点“入口...”选择项目入口即可在临时副本中运行。', ...
                     numel(app.Params), nUse, annNote, sessionNote);
             else
                 app.StatusLabel.Text = sprintf( ...
@@ -301,6 +304,11 @@ classdef App < handle
             if app.TableCtl.needsSave()
                 app.TableCtl.saveSession();
             end
+        end
+
+        function setEntryPoint(app, entryFile)
+            %SETENTRYPOINT Run this entry script with edits from SourceFile.
+            app.setEntryPointInternal(entryFile);
         end
 
         function runCurrent(app)
@@ -500,6 +508,7 @@ classdef App < handle
             callbacks.onDeletePreset = @(s, e) app.onDeletePreset();
             callbacks.onOpenSweep = @(s, e) app.onOpenSweep();
             callbacks.onAddManualParam = @(s, e) app.onAddManualParam();
+            callbacks.onChooseEntry = @(s, e) app.onChooseEntry();
             callbacks.onCellEdit = @(e) app.onCellEdit([], e);
             callbacks.onCellSelect = @(e) app.onCellSelect([], e);
             callbacks.onOpenInEditor = @(e) app.onOpenInEditor(e);
@@ -560,6 +569,36 @@ classdef App < handle
                 return;
             end
             app.loadFile(fullfile(path, file));
+        end
+
+        function onChooseEntry(app)
+            if isempty(app.SourceFile)
+                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
+                    'Icon', 'warning');
+                return;
+            end
+            [file, path] = uigetfile({'*.m', 'MATLAB 脚本 (*.m)'}, ...
+                '选择项目入口脚本', fileparts(app.SourceFile));
+            if isequal(file, 0)
+                return;
+            end
+            app.setEntryPoint(fullfile(path, file));
+        end
+
+        function setEntryPointInternal(app, entryFile)
+            %SETENTRYPOINTINTERNAL Run entry script with edits from SourceFile.
+            entryFile = char(entryFile);
+            if ~isfile(entryFile)
+                error('mps:App:missingEntry', '入口脚本不存在：%s', entryFile);
+            end
+            app.EntryFile = entryFile;
+            app.RunButton.Enable = 'on';
+            if license('test', 'Distrib_Computing_Toolbox')
+                app.BackgroundCheck.Enable = 'on';
+            end
+            app.StatusLabel.Text = sprintf( ...
+                '项目入口：%s（运行时会复制项目到临时目录并应用参数）', ...
+                entryFile);
         end
 
         function onOpenInEditor(app, varargin)
@@ -704,10 +743,11 @@ classdef App < handle
                     'Icon', 'warning');
                 return;
             end
-            if app.IsFunctionFile
+            if app.IsFunctionFile && isempty(app.EntryFile)
                 uialert(app.UIFigure, ...
-                    '这是函数文件，不能直接运行。请打开调用它的脚本，再调参运行。', ...
-                    '无法直接运行', 'Icon', 'warning');
+                    ['这是函数文件，不能直接运行。' ...
+                     '如果它是配置函数，请点“入口...”选择项目入口脚本。'], ...
+                    '需要项目入口', 'Icon', 'warning');
                 return;
             end
             if app.Busy
@@ -747,8 +787,15 @@ classdef App < handle
                     end
                 end
 
-                executor = mps.RunExecutor(app.SourceFile, app.Params, ...
-                    app.KeepFiguresCheck.Value);
+                if ~isempty(app.EntryFile) && ...
+                        ~strcmpi(app.EntryFile, app.SourceFile)
+                    executor = mps.ProjectRunExecutor(app.SourceFile, ...
+                        app.EntryFile, app.Params, ...
+                        app.KeepFiguresCheck.Value);
+                else
+                    executor = mps.RunExecutor(app.SourceFile, app.Params, ...
+                        app.KeepFiguresCheck.Value);
+                end
                 executor.MaxVariableMB = app.MaxVariableMB;
                 executor.MaxTotalMB = app.MaxTotalMB;
                 executor.Progress = @(message) setProgress(d, message);
@@ -843,9 +890,17 @@ classdef App < handle
                 end
 
                 app.setBackgroundProgress('后台运行 MATLAB 脚本...');
-                app.BackgroundFuture = parfeval(pool, ...
-                    @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
-                    app.MaxVariableMB, app.MaxTotalMB);
+                if ~isempty(app.EntryFile) && ...
+                        ~strcmpi(app.EntryFile, app.SourceFile)
+                    app.BackgroundFuture = parfeval(pool, ...
+                        @mps.backgroundProjectRun, 1, app.SourceFile, ...
+                        app.EntryFile, app.Params, ...
+                        app.MaxVariableMB, app.MaxTotalMB);
+                else
+                    app.BackgroundFuture = parfeval(pool, ...
+                        @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
+                        app.MaxVariableMB, app.MaxTotalMB);
+                end
                 app.BackgroundTimer = timer( ...
                     'ExecutionMode', 'fixedSpacing', 'Period', 0.5, ...
                     'TimerFcn', @(~, ~) app.pollBackgroundRun());
@@ -1622,7 +1677,7 @@ classdef App < handle
                 app.CompareButton, app.PresetSaveButton, ...
                 app.PresetLoadButton, app.PresetDeleteButton, ...
                 app.SweepButton, app.BulkButton, app.ManualButton, ...
-                app.UndoButton, app.RedoButton, ...
+                app.EntryButton, app.UndoButton, app.RedoButton, ...
                 app.PlotButton, app.SavePlotButton, app.ExportCsvButton, ...
                 app.OpenReportInline];
             for k = 1:numel(btns)
@@ -1645,7 +1700,8 @@ classdef App < handle
                 app.Table.Enable = 'on';
                 app.FilterDrop.Enable = 'on';
                 app.SearchField.Enable = 'on';
-                if ~isempty(app.SourceFile) && ~app.IsFunctionFile && ...
+                if ~isempty(app.SourceFile) && ...
+                        (~app.IsFunctionFile || ~isempty(app.EntryFile)) && ...
                         license('test', 'Distrib_Computing_Toolbox')
                     app.BackgroundCheck.Enable = 'on';
                 else
@@ -1670,7 +1726,8 @@ classdef App < handle
                     app.PresetDeleteButton.Enable = 'off';
                     app.SweepButton.Enable = 'off';
                     app.ManualButton.Enable = 'off';
-                elseif app.IsFunctionFile
+                    app.EntryButton.Enable = 'off';
+                elseif app.IsFunctionFile && isempty(app.EntryFile)
                     app.RunButton.Enable = 'off';
                     app.SweepButton.Enable = 'off';
                     app.ManualButton.Enable = 'off';

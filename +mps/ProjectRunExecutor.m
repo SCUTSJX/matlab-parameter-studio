@@ -1,0 +1,204 @@
+classdef ProjectRunExecutor < handle
+%PROJECTRUNEXECUTOR Run an entry script with edits in a shadow project.
+%
+%   Ex = mps.ProjectRunExecutor(sourceFile, entryFile, params, keepFigures)
+%   out = Ex.run()
+%
+%   sourceFile is the file whose parameters are being edited (often a
+%   configuration function), entryFile is the project script that should be
+%   executed (for example run_P156.m).  The project is copied to a temporary
+%   shadow folder, edits are applied there, and the entry script runs in that
+%   shadow so the original project is never modified.
+
+    properties
+        SourceFile = ''
+        EntryFile = ''
+        Params = struct([])
+        KeepFigures = false
+        MaxVariableMB = 100
+        MaxTotalMB = 512
+        Progress = @(message) []
+    end
+
+    methods
+        function obj = ProjectRunExecutor(sourceFile, entryFile, params, keepFigures)
+            obj.SourceFile = char(sourceFile);
+            obj.EntryFile = char(entryFile);
+            obj.Params = params;
+            obj.KeepFigures = logical(keepFigures);
+        end
+
+        function out = run(obj)
+            if isempty(obj.SourceFile) || isempty(obj.EntryFile)
+                error('mps:ProjectRunExecutor:noFiles', ...
+                    '参数源和入口脚本都必须指定。');
+            end
+            if isempty(obj.EntryFile) || ~isfile(obj.EntryFile)
+                error('mps:ProjectRunExecutor:missingEntry', ...
+                    '入口脚本不存在：%s', obj.EntryFile);
+            end
+
+            projectRoot = fileparts(obj.EntryFile);
+            relativeSource = relativeTo(projectRoot, obj.SourceFile);
+            if isempty(relativeSource)
+                error('mps:ProjectRunExecutor:outsideProject', ...
+                    '参数文件不在入口脚本所在项目内：%s', obj.SourceFile);
+            end
+            relativeEntry = relativeTo(projectRoot, obj.EntryFile);
+            if isempty(relativeEntry)
+                relativeEntry = obj.EntryFile;
+            end
+
+            shadowRoot = fullfile(tempdir, sprintf( ...
+                'mps_project_%s_%d', datestr(now, 'yyyymmdd_HHMMSSFFF'), ...
+                randi(1e9)));
+            cleaner = onCleanup(@() cleanupTree(shadowRoot)); %#ok<NASGU>
+            obj.Progress('复制项目到临时目录...');
+            mps.copyProjectTree(projectRoot, shadowRoot);
+
+            shadowSource = fullfile(shadowRoot, relativeSource);
+            if ~isfile(shadowSource)
+                error('mps:ProjectRunExecutor:missingSource', ...
+                    '临时项目里找不到参数文件：%s', relativeSource);
+            end
+            if any(arrayfun(@(p) isfield(p, 'manual') && logical(p.manual), ...
+                    obj.Params))
+                error('mps:ProjectRunExecutor:manual', ...
+                    '项目模式暂不支持手动参数。');
+            end
+            obj.Progress('写入调参后的配置...');
+            mps.applyEdits(obj.SourceFile, obj.Params, shadowSource, ...
+                'NeutralizeCloseAll', true);
+
+            wrapper = fullfile(shadowRoot, 'mps_project_wrapper.m');
+            writeWrapper(wrapper, relativeEntry);
+            keepScript = fullfile(obj.makeOutputDir(), 'run_script.m');
+
+            obj.Progress('运行项目入口...');
+            oldVis = get(groot, 'defaultFigureVisible');
+            set(groot, 'defaultFigureVisible', 'off');
+            figCleaner = onCleanup(@() set(groot, ...
+                'defaultFigureVisible', oldVis)); %#ok<NASGU>
+
+            r = mps.runScript(obj.EntryFile, wrapper, fileparts(keepScript), ...
+                'MaxVariableMB', obj.MaxVariableMB, ...
+                'MaxTotalMB', obj.MaxTotalMB);
+            clear figCleaner;
+            obj.handleFigures(r);
+
+            try
+                if isfile(wrapper) && ~strcmpi(wrapper, keepScript)
+                    copyfile(wrapper, keepScript);
+                end
+                if isfile(keepScript)
+                    r.scriptPath = keepScript;
+                end
+            catch
+            end
+
+            % Preserve the project's own result folder (metrics.csv,
+            % summary.mat, optional experiment plots) in the run directory.
+            shadowResults = fullfile(shadowRoot, '运行结果');
+            if isfolder(shadowResults)
+                try
+                    copyProjectTree(shadowResults, ...
+                        fullfile(fileparts(keepScript), 'project_results'));
+                catch
+                end
+            end
+
+            r.error = replaceShadowRoot(r.error, shadowRoot, projectRoot);
+            r.log = replaceShadowRoot(r.log, shadowRoot, projectRoot);
+
+            obj.Progress('生成 HTML 报告...');
+            reportPath = mps.writeReport(fileparts(keepScript), ...
+                obj.EntryFile, obj.Params, r);
+            out = struct('run', r, 'outDir', fileparts(keepScript), ...
+                'reportPath', reportPath, 'params', obj.Params, ...
+                'shadowRoot', shadowRoot);
+        end
+    end
+
+    methods (Access = private)
+        function outDir = makeOutputDir(obj)
+            stamp = datestr(now, 'yyyymmdd_HHMMSS');
+            root = fullfile(fileparts(obj.EntryFile), 'parameter_studio_runs');
+            if ~isfolder(root)
+                mkdir(root);
+            end
+            outDir = fullfile(root, stamp);
+            n = 2;
+            while isfolder(outDir)
+                outDir = fullfile(root, sprintf('%s_%d', stamp, n));
+                n = n + 1;
+            end
+            mkdir(outDir);
+        end
+
+        function handleFigures(obj, r)
+            if obj.KeepFigures
+                for k = 1:numel(r.figureHandles)
+                    if isvalid(r.figureHandles(k))
+                        set(r.figureHandles(k), 'Visible', 'on');
+                    end
+                end
+            else
+                for k = 1:numel(r.figureHandles)
+                    if isvalid(r.figureHandles(k))
+                        delete(r.figureHandles(k));
+                    end
+                end
+                r.figureHandles = gobjects(0);
+            end
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function rel = relativeTo(root, file)
+    root = char(root);
+    file = char(file);
+    prefix = [root filesep];
+    if strncmpi(file, prefix, numel(prefix))
+        rel = file(numel(prefix)+1:end);
+    else
+        rel = '';
+    end
+end
+
+% -------------------------------------------------------------------------
+function writeWrapper(path, relativeEntry)
+    fid = fopen(path, 'w', 'n', 'UTF-8');
+    if fid < 0
+        error('mps:ProjectRunExecutor:wrapper', ...
+            '无法写入临时入口脚本：%s', path);
+    end
+    cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
+    fprintf(fid, 'mpsProjectOldPath = path;\n');
+    fprintf(fid, 'mpsProjectCleanup = onCleanup(@() path(mpsProjectOldPath));\n');
+    fprintf(fid, 'mpsProjectHere = fileparts(mfilename(''fullpath''));\n');
+    fprintf(fid, 'run(fullfile(mpsProjectHere, ''%s''));\n', ...
+        strrep(relativeEntry, '''', ''''''));
+    clear cleaner;
+end
+
+% -------------------------------------------------------------------------
+function txt = replaceShadowRoot(txt, shadowRoot, projectRoot)
+    if isempty(txt)
+        return;
+    end
+    try
+        txt = strrep(txt, shadowRoot, projectRoot);
+    catch
+    end
+end
+
+% -------------------------------------------------------------------------
+function cleanupTree(path)
+    if isfolder(path)
+        try
+            rmdir(path, 's');
+        catch
+        end
+    end
+end

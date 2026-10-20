@@ -29,7 +29,8 @@ function data = captureWorkspace(maxVariableMB, maxTotalMB)
     for k = 1:numel(vars)
         name = vars(k).name;
         if any(strcmp(name, {'mpsScriptPath', 'mpsErrorReport', 'ans', ...
-                'maxVariableMB', 'maxTotalMB', 'limits'}))
+                'maxVariableMB', 'maxTotalMB', 'limits', ...
+                'mpsProjectOldPath', 'mpsProjectCleanup', 'mpsProjectHere'}))
             continue;
         end
         cls = vars(k).class;

@@ -164,9 +164,9 @@ function h = buildAppUI(cb)
         h.BackgroundCheck.Enable = 'off';
     end
 
-    pg2 = uigridlayout(lg, [1 7]);
+    pg2 = uigridlayout(lg, [1 8]);
     pg2.Layout.Row = 3;
-    pg2.ColumnWidth = {150, '1x', 96, 72, 72, 100, 96};
+    pg2.ColumnWidth = {145, '1x', 96, 60, 60, 92, 88, 64};
     pg2.Padding = [0 0 0 0];
     pg2.ColumnSpacing = 6;
 
@@ -202,6 +202,11 @@ function h = buildAppUI(cb)
         'Enable', 'off', ...
         'ButtonPushedFcn', @(s, e) cb.onAddManualParam());
     h.ManualButton.Layout.Column = 7;
+
+    h.EntryButton = uibutton(pg2, 'Text', '入口...', ...
+        'Enable', 'off', ...
+        'ButtonPushedFcn', @(s, e) cb.onChooseEntry());
+    h.EntryButton.Layout.Column = 8;
 
     h.Table = uitable(lg, ...
         'ColumnName', {'使用', '锁定', '参数', '当前值', '新值', '行', '类型', '说明', '注释'}, ...
@@ -387,6 +392,8 @@ function setTooltips(h)
         '多个参数一次跑多组值，自动出叠加曲线和扫描报告');
     set(h.ManualButton, 'Tooltip', ...
         '添加手动参数；选中已有的手动参数可编辑（写入 _manual.json）');
+    set(h.EntryButton, 'Tooltip', ...
+        '为配置/函数文件选择项目入口脚本，调参后在临时项目副本中运行入口');
 
     set(h.FigureDrop, 'Tooltip', '选择要预览的输出图');
     set(h.OpenReportInline, 'Tooltip', '用浏览器打开 HTML 报告');

@@ -613,6 +613,35 @@ function run_tests()
     delete(execDemo);
     fprintf('  run executor: ok\n');
 
+    % --- 20b. Project entry execution -----------------------------------
+    projectRoot = fullfile(tempdir, 'mps_project_runner_test');
+    if isfolder(projectRoot)
+        rmdir(projectRoot, 's');
+    end
+    mkdir(projectRoot);
+    fid = fopen(fullfile(projectRoot, 'config.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function c=config()\nc.gain=1;\nc.bias=2;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(projectRoot, 'entry.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['c=config(); y=c.gain*10; ' ...
+        'figure(''Name'',''project''); plot(1:3);\n']);
+    fclose(fid);
+    pProj = mps.scan(fullfile(projectRoot, 'config.m'));
+    gi = find(strcmp({pProj.name}, 'c.gain'), 1);
+    pProj(gi).newValue = '5';
+    pProj(gi).use = true;
+    projExec = mps.ProjectRunExecutor( ...
+        fullfile(projectRoot, 'config.m'), ...
+        fullfile(projectRoot, 'entry.m'), pProj, false);
+    projExec.Progress = @(msg) [];
+    projOut = projExec.run();
+    assert(projOut.run.ok, 'ProjectRunExecutor failed');
+    assert(abs(projOut.run.workspaceData.y - 50) < 1e-12, ...
+        'project entry should use the tuned config');
+    assert(isfile(projOut.reportPath), 'project report missing');
+    rmdir(projectRoot, 's');
+    fprintf('  project entry execution: ok\n');
+
     % --- 21. SweepRunner -------------------------------------------------
     sweepDemo = fullfile(tempdir, 'mps_sweep_runner_demo.m');
     copyfile(demo, sweepDemo);
@@ -728,6 +757,24 @@ function run_tests()
     app.loadFile(manualLoad);
     assert(any(strcmp({app.Params.name}, 'gain')), ...
         'loadFile should restore manual parameters');
+
+    uiProject = fullfile(tempdir, 'mps_ui_project_test');
+    if isfolder(uiProject)
+        rmdir(uiProject, 's');
+    end
+    mkdir(uiProject);
+    fid = fopen(fullfile(uiProject, 'config.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function c=config()\nc.gain=1;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(uiProject, 'entry.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'c=config(); y=c.gain*2;\n');
+    fclose(fid);
+    app.loadFile(fullfile(uiProject, 'config.m'));
+    app.setEntryPoint(fullfile(uiProject, 'entry.m'));
+    app.runCurrent();
+    assert(~isempty(app.Results.LastReport), ...
+        'project entry run should create a report');
+    rmdir(uiProject, 's');
     delete(app);
     if isfile(mps.sessionPath(manualLoad))
         delete(mps.sessionPath(manualLoad));
