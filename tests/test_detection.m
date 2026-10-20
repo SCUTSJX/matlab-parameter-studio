@@ -151,3 +151,43 @@
     assert(abs(rLock.workspaceData.k - 8) < 1e-12, ...
         'unlocked k should be overridden');
     fprintf('  locked parameters: ok\n');
+
+    % --- 7b. Invalid preset values and malformed sidecars -----------------
+    pBad = mps.scan(demo);
+    badPreset = struct('name', 'bad', 'values', struct( ...
+        'id', '', 'name', 'k', 'line', 7, ...
+        'newValue', '1; system(''calc'')', 'use', true, 'locked', false));
+    [pBadApplied, badStats] = mps.applyPreset(pBad, badPreset);
+    assert(badStats.invalid == 1, 'unsafe preset value should be invalid');
+    ki = find(strcmp({pBadApplied.name}, 'k'), 1);
+    assert(strcmp(pBadApplied(ki).newValue, pBadApplied(ki).value), ...
+        'invalid preset value must keep the original value');
+
+    robustFile = fullfile(tempdir, 'mps_robust_sidecars.m');
+    copyfile(demo, robustFile);
+    fid = fopen(mps.presetsPath(robustFile), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['{"presets":[{"name":"ok","values":' ...
+        '[{"name":"k","newValue":"8"}]},123]}']);
+    fclose(fid);
+    robustPresets = mps.readPresets(robustFile);
+    assert(numel(robustPresets) == 1, ...
+        'mixed-type preset arrays should keep valid entries');
+
+    fid = fopen(mps.sessionPath(robustFile), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['{"values":[{"name":"k","newValue":"8"},123]}']);
+    fclose(fid);
+    robustSession = mps.readSession(robustFile);
+    assert(~isempty(robustSession) && numel(robustSession.values) == 1, ...
+        'mixed-type session arrays should keep valid entries');
+
+    fid = fopen(mps.manualParamsPath(robustFile), 'w', 'n', 'UTF-8');
+    fprintf(fid, ['[{"name":"gain","newValue":"3","use":true},123]']);
+    fclose(fid);
+    robustManual = mps.readManualParams(robustFile);
+    assert(numel(robustManual) == 1, ...
+        'mixed-type manual arrays should keep valid entries');
+    delete(mps.presetsPath(robustFile));
+    delete(mps.sessionPath(robustFile));
+    delete(mps.manualParamsPath(robustFile));
+    delete(robustFile);
+    fprintf('  invalid presets + malformed sidecars: ok\n');

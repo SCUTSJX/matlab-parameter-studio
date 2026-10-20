@@ -117,4 +117,10 @@
             end
         end
     end
+
+    closeApp = mps.App('Visible', 'off');
+    closeApp.UIFigure.CloseRequestFcn(closeApp.UIFigure, []);
+    assert(~isvalid(closeApp.UIFigure), ...
+        'close callback should delete the main window');
+    delete(closeApp);
     fprintf('  app UI: ok\n');

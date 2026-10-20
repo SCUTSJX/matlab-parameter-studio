@@ -1,5 +1,5 @@
 function v = version()
 %VERSION MATLAB Parameter Studio version string.
 
-    v = '1.0.2';
+    v = '1.0.0';
 end
