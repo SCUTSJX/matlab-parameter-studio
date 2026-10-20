@@ -123,9 +123,9 @@ function h = buildAppUI(cb)
         'ButtonPushedFcn', @(s, e) cb.onBulkEdit());
     h.BulkButton.Layout.Column = 6;
 
-    ag = uigridlayout(lg, [1 6]);
+    ag = uigridlayout(lg, [1 7]);
     ag.Layout.Row = 2;
-    ag.ColumnWidth = {130, '1x', 96, 96, 96, 130};
+    ag.ColumnWidth = {130, '1x', 96, 96, 96, 120, 104};
     ag.Padding = [0 0 0 0];
     ag.ColumnSpacing = 6;
 
@@ -156,6 +156,13 @@ function h = buildAppUI(cb)
     h.KeepFiguresCheck = uicheckbox(ag, ...
         'Text', '保留结果图窗', 'Value', false);
     h.KeepFiguresCheck.Layout.Column = 6;
+
+    h.BackgroundCheck = uicheckbox(ag, ...
+        'Text', '后台运行', 'Value', false);
+    h.BackgroundCheck.Layout.Column = 7;
+    if ~license('test', 'Distrib_Computing_Toolbox')
+        h.BackgroundCheck.Enable = 'off';
+    end
 
     pg2 = uigridlayout(lg, [1 7]);
     pg2.Layout.Row = 3;
@@ -366,6 +373,8 @@ function setTooltips(h)
     set(h.RedoButton, 'Tooltip', '重做刚撤销的修改（Ctrl+Y）');
     set(h.KeepFiguresCheck, 'Tooltip', ...
         '勾选：运行结束后保留图窗；不勾选：图窗自动关闭（推荐）');
+    set(h.BackgroundCheck, 'Tooltip', ...
+        '在并行池后台运行单次仿真，界面不阻塞（需要 Parallel Computing Toolbox）');
     set(h.PresetDrop, 'Tooltip', '已保存的参数方案');
     set(h.PresetNameField, 'Tooltip', ...
         '给当前方案起个名字，例如 基线 / 高刚度 / 低阻尼');

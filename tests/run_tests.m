@@ -653,7 +653,22 @@ function run_tests()
             rmdir(parRoot, 's');
         end
         delete(parallelDemo);
-        fprintf('  parallel sweep: ok\n');
+
+        bgDemo = fullfile(tempdir, 'mps_background_demo.m');
+        copyfile(demo, bgDemo);
+        pBg = mps.scan(bgDemo);
+        pool = gcp('nocreate');
+        future = parfeval(pool, @mps.backgroundRun, 1, ...
+            bgDemo, pBg, 100, 512);
+        bgOut = fetchOutputs(future);
+        assert(bgOut.run.ok, 'backgroundRun failed');
+        assert(isfile(bgOut.reportPath), 'background report missing');
+        bgRoot = fullfile(fileparts(bgDemo), 'parameter_studio_runs');
+        if isfolder(bgRoot)
+            rmdir(bgRoot, 's');
+        end
+        delete(bgDemo);
+        fprintf('  parallel sweep + background run: ok\n');
     end
 
     % --- 22. Interactive-call detection + sweep cancel -------------------

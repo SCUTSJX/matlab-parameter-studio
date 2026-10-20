@@ -33,7 +33,9 @@ function data = captureWorkspace(maxVariableMB, maxTotalMB)
             continue;
         end
         cls = vars(k).class;
-        if startsWith(cls, 'matlab.ui.') || startsWith(cls, 'matlab.graphics.')
+        if startsWith(cls, 'matlab.ui.') || ...
+                startsWith(cls, 'matlab.graphics.') || ...
+                strcmp(cls, 'function_handle')
             continue;
         end
         bytes = vars(k).bytes;

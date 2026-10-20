@@ -70,8 +70,9 @@ classdef SweepRunner < handle
             else
                 [results, canceled] = obj.runSerial(sweepRoot, scenarios);
             end
-            if total == 0
-                results = obj.emptyResults();
+            if ~isempty(results)
+                keep = arrayfun(@(r) ~isempty(r.label), results);
+                results = results(keep);
             end
 
             if canceled

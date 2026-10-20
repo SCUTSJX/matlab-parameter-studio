@@ -11,6 +11,7 @@ classdef App < handle
         Results
         MaxVariableMB = 100
         MaxTotalMB = 512
+        RunTimeoutSeconds = 0   % 0 = no timeout
     end
 
     properties (Dependent)
@@ -35,6 +36,7 @@ classdef App < handle
         OpenReportInline
         AnnotationStatus, AnnotateTemplateButton, ImportAnnotationButton
         ClearAnnotationButton, LockButton, CompareButton, KeepFiguresCheck
+        BackgroundCheck
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
         PresetDeleteButton, SweepButton, BulkButton, ManualButton
         UndoButton, RedoButton
@@ -44,6 +46,13 @@ classdef App < handle
         Presets = struct([])
         PresetsFile = ''
         Busy = false
+        BackgroundFuture
+        BackgroundTimer
+        BackgroundDialog
+        BackgroundOldHV
+        BackgroundCanceled = false
+        BackgroundTimedOut = false
+        BackgroundStartedAt = 0
     end
 
     methods
@@ -63,6 +72,10 @@ classdef App < handle
         end
 
         function delete(app)
+            try
+                app.cancelBackgroundRun();
+            catch
+            end
             try
                 if app.TableCtl.needsSave()
                     app.saveSession();
@@ -225,9 +238,15 @@ classdef App < handle
             if app.IsFunctionFile
                 app.SweepButton.Enable = 'off';
                 app.ManualButton.Enable = 'off';
+                app.BackgroundCheck.Enable = 'off';
             else
                 app.SweepButton.Enable = 'on';
                 app.ManualButton.Enable = 'on';
+                if license('test', 'Distrib_Computing_Toolbox')
+                    app.BackgroundCheck.Enable = 'on';
+                else
+                    app.BackgroundCheck.Enable = 'off';
+                end
             end
             app.AnnotateTemplateButton.Enable = 'on';
             app.ImportAnnotationButton.Enable = 'on';
@@ -699,6 +718,11 @@ classdef App < handle
             if ~app.confirmInteractiveCalls('运行')
                 return;
             end
+            if app.BackgroundCheck.Value && ...
+                    license('test', 'Distrib_Computing_Toolbox')
+                app.startBackgroundRun();
+                return;
+            end
 
             app.setBusy(true);
             if strcmp(app.UIFigure.Visible, 'on')
@@ -771,6 +795,201 @@ classdef App < handle
                 app.UIFigure.HandleVisibility = oldHV;
             end
             app.setBusy(false);
+        end
+
+        % -----------------------------------------------------------------
+        function startBackgroundRun(app)
+            %STARTBACKGROUNDRUN Run one simulation on a PCT worker.
+            if app.Busy
+                return;
+            end
+            app.setBusy(true);
+            if strcmp(app.UIFigure.Visible, 'on')
+                d = uiprogressdlg(app.UIFigure, ...
+                    'Title', '后台运行', 'Message', '准备...', ...
+                    'Indeterminate', 'on', 'Cancelable', 'on', ...
+                    'CancelText', '取消运行');
+            else
+                d = [];
+            end
+            app.BackgroundDialog = d;
+            app.BackgroundOldHV = app.UIFigure.HandleVisibility;
+            app.UIFigure.HandleVisibility = 'off';
+            app.BackgroundCanceled = false;
+            app.BackgroundTimedOut = false;
+            app.BackgroundStartedAt = tic;
+
+            try
+                app.setBackgroundProgress('启动并行池...');
+                pool = gcp('nocreate');
+                if isempty(pool)
+                    pool = parpool('Processes');
+                end
+                root = fileparts(fileparts(which('mps.App')));
+                try
+                    wait(parfevalOnAll(pool, @addpath, 0, root));
+                catch
+                end
+
+                % Close figures from the previous run.
+                if isfield(app.Results.LastRun, 'figureHandles')
+                    old = app.Results.LastRun.figureHandles;
+                    for k = 1:numel(old)
+                        if isvalid(old(k))
+                            close(old(k));
+                        end
+                    end
+                end
+
+                app.setBackgroundProgress('后台运行 MATLAB 脚本...');
+                app.BackgroundFuture = parfeval(pool, ...
+                    @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
+                    app.MaxVariableMB, app.MaxTotalMB);
+                app.BackgroundTimer = timer( ...
+                    'ExecutionMode', 'fixedSpacing', 'Period', 0.5, ...
+                    'TimerFcn', @(~, ~) app.pollBackgroundRun());
+                start(app.BackgroundTimer);
+            catch err
+                app.finishBackgroundRun([], err.message);
+            end
+        end
+
+        function pollBackgroundRun(app)
+            %POLLBACKGROUNDRUN Timer callback for a background run.
+            if isempty(app.BackgroundFuture)
+                return;
+            end
+            d = app.BackgroundDialog;
+            if ~isempty(d) && isvalid(d)
+                try
+                    if d.CancelRequested
+                        app.BackgroundCanceled = true;
+                        cancel(app.BackgroundFuture);
+                    end
+                catch
+                end
+            end
+            if app.RunTimeoutSeconds > 0 && ...
+                    toc(app.BackgroundStartedAt) > app.RunTimeoutSeconds
+                app.BackgroundTimedOut = true;
+                app.BackgroundCanceled = true;
+                try
+                    cancel(app.BackgroundFuture);
+                catch
+                end
+            end
+
+            state = app.BackgroundFuture.State;
+            if ~any(strcmp(state, {'finished', 'cancelled'}))
+                return;
+            end
+            if ~isempty(app.BackgroundTimer) && isvalid(app.BackgroundTimer)
+                stop(app.BackgroundTimer);
+                delete(app.BackgroundTimer);
+            end
+            app.BackgroundTimer = [];
+
+            if app.BackgroundCanceled
+                if app.BackgroundTimedOut
+                    msg = sprintf('后台运行超时（%d s），已取消。', ...
+                        app.RunTimeoutSeconds);
+                else
+                    msg = '后台运行已取消。';
+                end
+                app.finishBackgroundRun([], msg);
+                return;
+            end
+            try
+                out = fetchOutputs(app.BackgroundFuture);
+            catch err
+                app.finishBackgroundRun([], err.message);
+                return;
+            end
+            app.finishBackgroundRun(out, '');
+        end
+
+        function finishBackgroundRun(app, out, errorMessage)
+            %FINISHBACKGROUNDRUN Restore UI and publish a background result.
+            app.cleanupBackgroundRun();
+            if ~isempty(errorMessage)
+                app.StatusLabel.Text = errorMessage;
+                if strcmp(app.UIFigure.Visible, 'on')
+                    uialert(app.UIFigure, errorMessage, '后台运行失败', ...
+                        'Icon', 'error');
+                end
+                app.setBusy(false);
+                return;
+            end
+            r = out.run;
+            r.figureHandles = gobjects(0);
+            app.Results.OutputDir = out.outDir;
+            app.Results.LastRun = r;
+            app.Results.LastWorkspace = r.workspaceData;
+            app.Results.LastReport = out.reportPath;
+            app.Results.refreshAll();
+            if isempty(r.log)
+                app.LogArea.Value = {''};
+            else
+                app.LogArea.Value = splitlines(r.log);
+            end
+            app.ReportButton.Enable = 'on';
+            app.FolderButton.Enable = 'on';
+            app.CloseFiguresButton.Enable = 'on';
+            app.CompareButton.Enable = 'on';
+            if r.ok
+                app.StatusLabel.Text = sprintf( ...
+                    '后台完成：%d 个参数参与，%d 张图，%d 个变量，耗时 %.2f s。', ...
+                    sum([app.Params.use]), numel(r.figures), ...
+                    numel(r.workspace), r.elapsedSeconds);
+            else
+                app.StatusLabel.Text = '后台运行失败，已生成错误报告。';
+                if strcmp(app.UIFigure.Visible, 'on')
+                    uialert(app.UIFigure, ...
+                        '脚本运行出错。详情见“日志”标签和 HTML 报告。', ...
+                        '运行失败', 'Icon', 'error');
+                end
+            end
+            app.setBusy(false);
+        end
+
+        function cleanupBackgroundRun(app)
+            if ~isempty(app.BackgroundTimer) && isvalid(app.BackgroundTimer)
+                try
+                    stop(app.BackgroundTimer);
+                    delete(app.BackgroundTimer);
+                catch
+                end
+            end
+            app.BackgroundTimer = [];
+            if ~isempty(app.BackgroundDialog) && isvalid(app.BackgroundDialog)
+                delete(app.BackgroundDialog);
+            end
+            app.BackgroundDialog = [];
+            if ~isempty(app.UIFigure) && isvalid(app.UIFigure) && ...
+                    ~isempty(app.BackgroundOldHV)
+                app.UIFigure.HandleVisibility = app.BackgroundOldHV;
+            end
+            app.BackgroundOldHV = [];
+            app.BackgroundFuture = [];
+            app.BackgroundCanceled = false;
+            app.BackgroundTimedOut = false;
+        end
+
+        function cancelBackgroundRun(app)
+            if ~isempty(app.BackgroundFuture)
+                try
+                    cancel(app.BackgroundFuture);
+                catch
+                end
+            end
+            app.cleanupBackgroundRun();
+        end
+
+        function setBackgroundProgress(app, message)
+            if ~isempty(app.BackgroundDialog) && isvalid(app.BackgroundDialog)
+                app.BackgroundDialog.Message = message;
+            end
+            drawnow;
         end
 
         % -----------------------------------------------------------------
@@ -1358,6 +1577,10 @@ classdef App < handle
         end
         function onClose(app)
             try
+                app.cancelBackgroundRun();
+            catch
+            end
+            try
                 if app.TableCtl.needsSave()
                     app.saveSession();
                 end
@@ -1390,6 +1613,24 @@ classdef App < handle
                     else
                         btns(k).Enable = 'on';
                     end
+                end
+            end
+            if b
+                app.KeepFiguresCheck.Enable = 'off';
+                app.BackgroundCheck.Enable = 'off';
+                app.Table.Enable = 'off';
+                app.FilterDrop.Enable = 'off';
+                app.SearchField.Enable = 'off';
+            else
+                app.KeepFiguresCheck.Enable = 'on';
+                app.Table.Enable = 'on';
+                app.FilterDrop.Enable = 'on';
+                app.SearchField.Enable = 'on';
+                if ~isempty(app.SourceFile) && ~app.IsFunctionFile && ...
+                        license('test', 'Distrib_Computing_Toolbox')
+                    app.BackgroundCheck.Enable = 'on';
+                else
+                    app.BackgroundCheck.Enable = 'off';
                 end
             end
             if ~b
