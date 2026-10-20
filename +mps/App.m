@@ -57,6 +57,7 @@ classdef App < handle
         TableCtl
         SourceCtl
         PresetCtl
+        AnnotationCtl
         Busy = false
         BackgroundMgr
         SweepStartedAt = 0
@@ -91,6 +92,10 @@ classdef App < handle
                 app.StatusLabel);
             app.PresetCtl.UndoFcn = @() app.pushUndo();
             app.PresetCtl.RefreshFcn = @() app.refreshTable();
+            app.AnnotationCtl = mps.AnnotationController(app, ...
+                app.StatusLabel);
+            app.AnnotationCtl.UndoFcn = @() app.pushUndo();
+            app.AnnotationCtl.RefreshFcn = @() app.refreshTable();
             app.UIFigure.UserData = app;
             app.UIFigure.Visible = visible;
         end
@@ -388,23 +393,17 @@ classdef App < handle
 
         function path = exportAnnotationTemplate(app, jsonPath)
             %EXPORTANNOTATIONTEMPLATE Write the annotation template JSON.
-            mps.writeAnnotationTemplate(app.SourceFile, app.Params, jsonPath);
-            path = jsonPath;
+            path = app.AnnotationCtl.exportTemplate(jsonPath);
         end
 
         function stats = importAnnotations(app, jsonPath)
             %IMPORTANNOTATIONS Read and apply an annotation JSON.
-            anns = mps.readAnnotations(jsonPath);
-            app.pushUndo();
-            [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
-            app.LastAnnotations = anns;
-            app.AnnotationFile = jsonPath;
-            app.refreshTable();
+            stats = app.AnnotationCtl.importFile(jsonPath);
         end
 
         function clearAnnotations(app)
             %CLEARANNOTATIONS Remove all in-memory annotations.
-            app.onClearAnnotations();
+            app.AnnotationCtl.clear();
         end
 
         function toggleLock(app, name)
@@ -543,9 +542,9 @@ classdef App < handle
             callbacks.onReset = @(s, e) app.onReset();
             callbacks.onBulkEdit = @(s, e) app.onBulkEdit();
             callbacks.onWriteAnnotationTemplate = ...
-                @(s, e) app.onWriteAnnotationTemplate();
-            callbacks.onImportAnnotations = @(s, e) app.onImportAnnotations();
-            callbacks.onClearAnnotations = @(s, e) app.onClearAnnotations();
+                @(s, e) app.AnnotationCtl.onWrite();
+            callbacks.onImportAnnotations = @(s, e) app.AnnotationCtl.onImport();
+            callbacks.onClearAnnotations = @(s, e) app.AnnotationCtl.onClear();
             callbacks.onToggleLock = @(s, e) app.onToggleLock();
             callbacks.onSavePreset = @(s, e) app.PresetCtl.onSave();
             callbacks.onLoadPreset = @(s, e) app.PresetCtl.onLoad();
@@ -1024,86 +1023,6 @@ classdef App < handle
         function onBulkEdit(app)
             app.TableCtl.onBulkEdit();
         end
-        function onWriteAnnotationTemplate(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            [~, base] = fileparts(app.SourceFile);
-            defaultName = fullfile(fileparts(app.SourceFile), ...
-                [base '_annotations.json']);
-            [file, path] = uiputfile({'*.json', 'JSON 文件 (*.json)'}, ...
-                '生成注释模板 JSON', defaultName);
-            if isequal(file, 0)
-                return;
-            end
-            target = fullfile(path, file);
-            try
-                mps.writeAnnotationTemplate(app.SourceFile, ...
-                    app.Params, target);
-            catch err
-                uialert(app.UIFigure, err.message, '生成失败', 'Icon', 'error');
-                return;
-            end
-            app.StatusLabel.Text = sprintf('注释模板已生成：%s', target);
-            uialert(app.UIFigure, sprintf( ...
-                ['注释模板已生成：\n%s\n\n' ...
-                 '使用方法：把该 JSON 发给 AI（或自己填写），让 AI 为每个参数的 ' ...
-                 'description（含义）和 unit（单位）赋值，然后回到本应用点“导入注释”。\n\n' ...
-                 '重新打开同一个 .m 文件时，如果旁边存在 <文件名>_annotations.json，' ...
-                 '会自动载入。'], target), '生成成功', 'Icon', 'info');
-        end
-
-        function onImportAnnotations(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            [file, path] = uigetfile({'*.json', 'JSON 文件 (*.json)'}, ...
-                '导入注释 JSON', fileparts(app.SourceFile));
-            if isequal(file, 0)
-                return;
-            end
-            target = fullfile(path, file);
-            try
-                anns = mps.readAnnotations(target);
-            catch err
-                uialert(app.UIFigure, err.message, '导入失败', 'Icon', 'error');
-                return;
-            end
-            app.pushUndo();
-            [app.Params, stats] = mps.applyAnnotations(app.Params, anns);
-            app.LastAnnotations = anns;
-            app.AnnotationFile = target;
-            app.refreshTable();
-            msg = sprintf(['已读取 %d 条注释：\n' ...
-                '  匹配到参数：%d\n  重名无法匹配：%d\n  未匹配：%d\n  空注释跳过：%d'], ...
-                numel(anns), stats.matched, stats.ambiguous, ...
-                stats.unmatched, stats.skipped);
-            app.StatusLabel.Text = sprintf('已导入注释：匹配 %d / %d 条（%s）', ...
-                stats.matched, numel(anns), target);
-            if stats.matched == 0 && stats.skipped < numel(anns)
-                uialert(app.UIFigure, [msg, sprintf('\n\n提示：注释里的变量名需要和“参数”列一致；id 匹配最准确。')], ...
-                    '没有匹配到参数', 'Icon', 'warning');
-            else
-                uialert(app.UIFigure, msg, '导入注释', 'Icon', 'info');
-            end
-        end
-
-        function onClearAnnotations(app)
-            app.pushUndo();
-            for k = 1:numel(app.Params)
-                app.Params(k).description = '';
-                app.Params(k).unit = '';
-            end
-            app.LastAnnotations = struct([]);
-            app.AnnotationFile = '';
-            app.refreshTable();
-            app.StatusLabel.Text = '已清空当前参数上的注释。';
-        end
-
         function onToggleLock(app)
             app.TableCtl.onToggleLock();
         end
