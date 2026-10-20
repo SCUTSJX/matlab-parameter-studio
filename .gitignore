@@ -9,6 +9,8 @@ logs/
 # Generated tuning/export files (force-add if you want to version them)
 *_tuned.m
 *_params.json
+*_annotations.json
+*_presets.json
 
 # MATLAB / editor artifacts
 *.asv
