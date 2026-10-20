@@ -65,6 +65,10 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
     oldPwd = pwd;
     logFile = fullfile(outDir, 'console.log');
 
+    % Remember the user's own diary state; running must not silently turn
+    % off a diary the user opened before the run.
+    oldDiaryOn = strcmpi(get(0, 'Diary'), 'on');
+    oldDiaryFile = get(0, 'DiaryFile');
     diary off;
     diary(logFile);
     diary on;
@@ -206,6 +210,14 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
 
     function cleanupRun()
         diary off;
+        if oldDiaryOn && ~isempty(oldDiaryFile)
+            try
+                diary(oldDiaryFile);
+                diary on;
+            catch
+                % 恢复用户原 diary 失败不影响运行结果
+            end
+        end
         try
             cd(oldPwd);
         catch

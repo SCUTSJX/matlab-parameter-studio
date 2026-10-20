@@ -80,14 +80,26 @@ classdef SaveController < handle
                 obj.alert('无法写入目标文件。', '保存失败', 'Icon', 'error');
                 return;
             end
-            fprintf(fid, '%s', outText);
+            try
+                fprintf(fid, '%s', outText);
+            catch err
+                fclose(fid);
+                obj.alert(err.message, '保存失败', 'Icon', 'error');
+                return;
+            end
             fclose(fid);
 
             [folder, outBase] = fileparts(target);
             jsonPath = fullfile(folder, [outBase '_params.json']);
             fid = fopen(jsonPath, 'w', 'n', 'UTF-8');
             if fid >= 0
-                fprintf(fid, '%s', jsonencode(applied));
+                try
+                    fprintf(fid, '%s', jsonencode(applied));
+                catch err
+                    fclose(fid);
+                    obj.alert(err.message, '保存失败', 'Icon', 'error');
+                    return;
+                end
                 fclose(fid);
             end
 
@@ -114,7 +126,13 @@ classdef SaveController < handle
                 obj.alert('无法写入文件。', '导出失败', 'Icon', 'error');
                 return;
             end
-            fprintf(fid, '%s', jsonencode(params));
+            try
+                fprintf(fid, '%s', jsonencode(params));
+            catch err
+                fclose(fid);
+                obj.alert(err.message, '导出失败', 'Icon', 'error');
+                return;
+            end
             fclose(fid);
             obj.StatusLabel.Text = sprintf('已导出参数集：%s', target);
         end

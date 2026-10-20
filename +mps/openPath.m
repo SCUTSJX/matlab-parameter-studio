@@ -12,9 +12,17 @@ function openPath(target)
 
     if ispc
         winopen(target);
-    elseif ismac
-        system(['open "' target '"']);
     else
-        system(['xdg-open "' target '" &']);
+        % POSIX shell: wrap the path in single quotes and turn embedded
+        % quotes into '"'"' so paths with quotes, spaces or $ cannot break
+        % out of the command.
+        q = '''';                    % single quote character
+        esc = [q '\' q q];           % '\''
+        quoted = ['''' strrep(target, q, esc) ''''];
+        if ismac
+            system(['open ' quoted]);
+        else
+            system(['xdg-open ' quoted ' &']);
+        end
     end
 end
