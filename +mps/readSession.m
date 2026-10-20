@@ -19,18 +19,23 @@ function session = readSession(sourceFile)
         mps.logWarning('读取会话文件', err);
         return;
     end
-    if ~isstruct(data) || ~isfield(data, 'values')
-        return;
+    try
+        if ~isstruct(data) || ~isfield(data, 'values')
+            return;
+        end
+        values = normalizeValues(data.values);
+        if isempty(values)
+            return;
+        end
+        session = struct( ...
+            'sourceFile', charField(data, 'sourceFile'), ...
+            'savedAt', charField(data, 'savedAt'), ...
+            'stamp', stampField(data), ...
+            'values', values);
+    catch err
+        mps.logWarning('解析会话文件', err);
+        session = struct([]);
     end
-    values = normalizeValues(data.values);
-    if isempty(values)
-        return;
-    end
-    session = struct( ...
-        'sourceFile', charField(data, 'sourceFile'), ...
-        'savedAt', charField(data, 'savedAt'), ...
-        'stamp', stampField(data), ...
-        'values', values);
 end
 
 % -------------------------------------------------------------------------
@@ -39,6 +44,8 @@ function values = normalizeValues(raw)
         'newValue', {}, 'use', {}, 'locked', {}, 'description', {}, ...
         'unit', {});
     if iscell(raw)
+        % Mixed-type arrays (hand-edited files) must not crash the reader.
+        raw = raw(cellfun(@isstruct, raw));
         raw = [raw{:}];
     end
     if ~isstruct(raw)

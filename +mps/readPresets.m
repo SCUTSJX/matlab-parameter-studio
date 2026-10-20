@@ -19,23 +19,31 @@ function presets = readPresets(sourceFile)
         mps.logWarning('读取参数集', err);
         return;
     end
-    if ~isstruct(data) || ~isfield(data, 'presets')
-        return;
-    end
-    items = data.presets;
-    if iscell(items)
-        items = [items{:}];
-    end
-    if ~isstruct(items)
-        return;
-    end
-    for k = 1:numel(items)
-        item = items(k);
-        presets(end+1) = struct( ...
-            'name', charField(item, 'name'), ...
-            'created', charField(item, 'created'), ...
-            'note', charField(item, 'note'), ...
-            'values', normalizeValues(item)); %#ok<AGROW>
+    try
+        if ~isstruct(data) || ~isfield(data, 'presets')
+            return;
+        end
+        items = data.presets;
+        if iscell(items)
+            % Mixed-type arrays (hand-edited or AI-generated files) must be
+            % ignored gracefully, not crash the caller.
+            items = items(cellfun(@isstruct, items));
+            items = [items{:}];
+        end
+        if ~isstruct(items)
+            return;
+        end
+        for k = 1:numel(items)
+            item = items(k);
+            presets(end+1) = struct( ...
+                'name', charField(item, 'name'), ...
+                'created', charField(item, 'created'), ...
+                'note', charField(item, 'note'), ...
+                'values', normalizeValues(item)); %#ok<AGROW>
+        end
+    catch err
+        mps.logWarning('解析参数集', err);
+        presets = emptyPresets();
     end
 end
 
@@ -53,6 +61,8 @@ function values = normalizeValues(item)
     end
     raw = item.values;
     if iscell(raw)
+        % Mixed-type arrays (hand-edited files) must not crash the reader.
+        raw = raw(cellfun(@isstruct, raw));
         raw = [raw{:}];
     end
     if ~isstruct(raw)

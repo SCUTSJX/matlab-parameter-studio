@@ -8,12 +8,14 @@ function params = readManualParams(sourceFile)
     end
     try
         raw = jsondecode(fileread(path));
+        if iscell(raw)
+            % Mixed-type arrays must degrade gracefully, not crash.
+            raw = raw(cellfun(@isstruct, raw));
+            raw = [raw{:}];
+        end
     catch err
         mps.logWarning('读取手动参数', err);
         return;
-    end
-    if iscell(raw)
-        raw = [raw{:}];
     end
     if ~isstruct(raw)
         return;
