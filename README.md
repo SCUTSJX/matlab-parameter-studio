@@ -6,9 +6,9 @@
 
 ### Turn any MATLAB `.m` script into an interactive parameter-tuning workbench.
 
-[![MATLAB R2023b+](https://img.shields.io/badge/MATLAB-R2023b%2B-orange?style=flat-square)](#requirements)
-[![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)](#status)
+[![MATLAB R2023b+](docs/badges/matlab.svg)](#requirements)
+[![MIT License](docs/badges/license.svg)](LICENSE)
+[![Version](docs/badges/version.svg)](#status)
 
 [Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Batch sweeps](#batch-sweeps) · [Comparison](#how-it-compares) · [Limitations](#known-limitations)
 

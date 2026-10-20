@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="116" height="20" role="img" aria-label="MATLAB: R2023b+">
+  <title>MATLAB: R2023b+</title>
+  <g shape-rendering="crispEdges">
+    <rect width="55" height="20" fill="#555"/>
+    <rect x="55" width="61" height="20" fill="#ea7233"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="110">
+    <text x="285" y="140" textLength="450" transform="scale(.1)">MATLAB</text>
+    <text x="845" y="140" textLength="510" transform="scale(.1)">R2023b+</text>
+  </g>
+</svg>

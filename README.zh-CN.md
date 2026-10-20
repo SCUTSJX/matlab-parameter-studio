@@ -6,9 +6,9 @@
 
 ### 把任意 MATLAB `.m` 脚本变成可调参的交互式工作台。
 
-[![MATLAB](https://img.shields.io/badge/MATLAB-R2023b%2B-orange?style=flat-square)](#快速开始)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)](#快速开始)
+[![MATLAB](docs/badges/matlab.svg)](#快速开始)
+[![License](docs/badges/license.svg)](LICENSE)
+[![Version](docs/badges/version.svg)](#快速开始)
 
 [快速开始](#快速开始) · [功能](#界面说明) · [工作原理](#工作原理) · [同类项目](#在-github-上和类似项目的对比) · [已知限制](#已知限制)
 
