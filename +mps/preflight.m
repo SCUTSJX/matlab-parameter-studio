@@ -94,7 +94,7 @@ function out = preflight(varargin)
     clear diaryCleaner;
 
     redactLogFile(logFile, root, tempdir);
-    cleanupPreflightLogs(logDir, keepLogs);
+    cleanupPreflightLogs(logDir, keepLogs, logFile);
 
     if ~out.ok
         warning('mps:preflight:failed', ...
@@ -156,21 +156,31 @@ function redactLogFile(logFile, root, tempDir)
 end
 
 % -------------------------------------------------------------------------
-function cleanupPreflightLogs(logDir, keepLogs)
+function cleanupPreflightLogs(logDir, keepLogs, currentFile)
     keepLogs = max(1, round(double(keepLogs)));
     items = dir(fullfile(logDir, 'preflight_*.log'));
     items = items(~[items.isdir]);
     if numel(items) <= keepLogs
         return;
     end
-    [~, order] = sort([items.datenum], 'descend');
-    items = items(order);
-    for k = keepLogs + 1:numel(items)
-        target = fullfile(logDir, items(k).name);
+
+    % Always keep the log from this run, even when several files share the
+    % same coarse file-system timestamp.  The remaining slots go to the
+    % newest other logs.
+    [~, currentName, currentExt] = fileparts(currentFile);
+    currentName = [currentName currentExt];
+    others = items(~strcmp({items.name}, currentName));
+    if numel(others) <= keepLogs - 1
+        return;
+    end
+    [~, order] = sort([others.datenum], 'descend');
+    others = others(order);
+    for k = max(1, keepLogs):numel(others)
+        target = fullfile(logDir, others(k).name);
         try
             delete(target);
         catch err
-            mps.logWarning(sprintf('清理旧 preflight 日志 %s', items(k).name), ...
+            mps.logWarning(sprintf('清理旧 preflight 日志 %s', others(k).name), ...
                 err, 'Silent', true);
         end
     end
