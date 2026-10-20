@@ -1,7 +1,39 @@
+# MATLAB Parameter Studio generated outputs
 parameter_studio_runs/
 mps_run_*.m
+mps_sweep_*.m
 *_session.json
 *_manual.json
+logs/
+
+# Generated tuning/export files (force-add if you want to version them)
+*_tuned.m
+*_params.json
+
+# MATLAB / editor artifacts
 *.asv
 *.autosave
-logs/
+*.m~
+*.bak
+*.orig
+*.rej
+*.tmp
+*.swp
+*.swo
+*.log
+
+# OS metadata
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# MATLAB packaging / build artifacts
+*.mltbx
+*.mlappinstall
+*.mlpkginstall
+*.slxc
+slprj/
+codegen/
+*.mex*
+*.p
+.mps_cache/
