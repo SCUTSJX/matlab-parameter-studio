@@ -17,6 +17,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
     maxTotalMB = 512;
     saveFigFiles = true;
     figureResolution = 150;
+    lazyWorkspaceMB = 32;
     for k = 1:2:numel(varargin)
         if k + 1 > numel(varargin), break; end
         switch lower(char(varargin{k}))
@@ -28,6 +29,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 saveFigFiles = logical(varargin{k+1});
             case 'figureresolution'
                 figureResolution = varargin{k+1};
+            case 'lazyworkspacemb'
+                lazyWorkspaceMB = varargin{k+1};
         end
     end
 
@@ -68,9 +71,12 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
     cleanupObj = onCleanup(@() cleanupRun()); %#ok<NASGU>
 
     try
-        ws = mps.executeScript(scriptPath, maxVariableMB, maxTotalMB);
+        ws = mps.executeScript(scriptPath, maxVariableMB, maxTotalMB, ...
+            fullfile(outDir, 'workspace.mat'), lazyWorkspaceMB);
         result.workspaceData = ws.data;
-        result.workspace = mps.summarizeWorkspace(ws.data);
+        result.workspace = ws.summary;
+        result.matFile = ws.matFile;
+        result.lazyWorkspace = ws.lazy;
         result.ok = ws.ok;
         result.error = ws.error;
     catch err

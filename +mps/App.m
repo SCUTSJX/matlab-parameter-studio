@@ -15,6 +15,7 @@ classdef App < handle
         Results
         MaxVariableMB = 100
         MaxTotalMB = 512
+        LazyWorkspaceMB = 32
         SaveFigFiles = false
         FigureResolution = 150
         RunTimeoutSeconds = 0   % 0 = no timeout
@@ -657,7 +658,7 @@ classdef App < handle
             app.RunButton.Enable = 'on';
             app.SaveButton.Enable = 'off';
             app.ExportButton.Enable = 'on';
-            app.SweepButton.Enable = 'off';
+            app.SweepButton.Enable = 'on';
             app.ManualButton.Enable = 'off';
             app.EntryButton.Enable = 'on';
             app.AnnotateTemplateButton.Enable = 'on';
@@ -954,6 +955,7 @@ classdef App < handle
                 end
                 executor.MaxVariableMB = app.MaxVariableMB;
                 executor.MaxTotalMB = app.MaxTotalMB;
+                executor.LazyWorkspaceMB = app.LazyWorkspaceMB;
                 executor.SaveFigFiles = app.SaveFigFiles;
                 executor.FigureResolution = app.FigureResolution;
                 executor.Progress = @(message) setProgress(d, message);
@@ -1055,12 +1057,13 @@ classdef App < handle
                         @mps.backgroundProjectRun, 1, app.SourceFile, ...
                         app.EntryFile, app.Params, app.MaxVariableMB, ...
                         app.MaxTotalMB, app.SaveFigFiles, ...
-                        app.FigureResolution);
+                        app.FigureResolution, app.LazyWorkspaceMB);
                 else
                     app.BackgroundFuture = parfeval(pool, ...
                         @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
                         app.MaxVariableMB, app.MaxTotalMB, ...
-                        app.SaveFigFiles, app.FigureResolution);
+                        app.SaveFigFiles, app.FigureResolution, ...
+                        app.LazyWorkspaceMB);
                 end
                 app.BackgroundTimer = timer( ...
                     'ExecutionMode', 'fixedSpacing', 'Period', 0.5, ...
@@ -1475,12 +1478,6 @@ classdef App < handle
                     'Icon', 'warning');
                 return;
             end
-            if app.ProjectMode
-                uialert(app.UIFigure, ...
-                    '项目模式暂不支持批量扫描；请用单次后台运行或分别打开参数文件。', ...
-                    '项目模式', 'Icon', 'warning');
-                return;
-            end
             if app.IsFunctionFile
                 uialert(app.UIFigure, ...
                     '这是函数文件，不能直接扫描运行。请打开调用它的脚本。', ...
@@ -1617,9 +1614,12 @@ classdef App < handle
                     app.KeepFiguresCheck.Value);
                 runner.MaxVariableMB = app.MaxVariableMB;
                 runner.MaxTotalMB = app.MaxTotalMB;
+                runner.LazyWorkspaceMB = app.LazyWorkspaceMB;
                 runner.SaveFigFiles = app.SaveFigFiles;
                 runner.FigureResolution = app.FigureResolution;
                 runner.MaxScenarios = maxScenarios;
+                runner.ProjectMode = app.ProjectMode;
+                runner.EntryFile = app.EntryFile;
                 runner.Parallel = logical(parallel);
                 runner.Progress = @(fraction, message) ...
                     app.updateSweepProgress(d, fraction, message);
@@ -1923,13 +1923,14 @@ classdef App < handle
                         app.PresetLoadButton.Enable = 'on';
                         app.PresetDeleteButton.Enable = 'on';
                     end
-                    if ~app.IsFunctionFile && ~app.ProjectMode
+                    if ~app.IsFunctionFile
                         app.SweepButton.Enable = 'on';
-                        app.ManualButton.Enable = 'on';
+                        if ~app.ProjectMode
+                            app.ManualButton.Enable = 'on';
+                        end
                     end
                     if app.ProjectMode
                         app.SaveButton.Enable = 'off';
-                        app.SweepButton.Enable = 'off';
                         app.ManualButton.Enable = 'off';
                     end
                 end
@@ -1947,7 +1948,12 @@ classdef App < handle
                 if ~isfield(app.Results.LastRun, 'figures') || isempty(app.Results.LastRun.figures)
                     app.CloseFiguresButton.Enable = 'off';
                 end
-                if ~isstruct(app.Results.LastWorkspace) || isempty(fieldnames(app.Results.LastWorkspace))
+                hasWorkspaceFile = isfield(app.Results.LastRun, 'matFile') && ...
+                    ~isempty(app.Results.LastRun.matFile) && ...
+                    isfile(app.Results.LastRun.matFile);
+                if ~hasWorkspaceFile && ...
+                        (~isstruct(app.Results.LastWorkspace) || ...
+                        isempty(fieldnames(app.Results.LastWorkspace)))
                     app.PlotButton.Enable = 'off';
                     app.SavePlotButton.Enable = 'off';
                     app.ExportCsvButton.Enable = 'off';

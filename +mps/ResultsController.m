@@ -147,7 +147,26 @@ classdef ResultsController < handle
 
         function refreshPlotVariables(obj)
             names = {};
-            if isstruct(obj.LastWorkspace)
+            matFile = obj.workspaceMatFile();
+            if ~isempty(matFile) && isfile(matFile)
+                try
+                    vars = whos('-file', matFile);
+                    for k = 1:numel(vars)
+                        cls = vars(k).class;
+                        if ~(strcmp(cls, 'double') || strcmp(cls, 'single') || ...
+                                strcmp(cls, 'logical') || ...
+                                startsWith(cls, 'int') || startsWith(cls, 'uint'))
+                            continue;
+                        end
+                        sz = vars(k).size;
+                        if sum(sz > 1) > 1 || prod(sz) < 2 || prod(sz) > 1e6
+                            continue;
+                        end
+                        names{end+1} = vars(k).name; %#ok<AGROW>
+                    end
+                catch
+                end
+            elseif isstruct(obj.LastWorkspace)
                 fields = fieldnames(obj.LastWorkspace);
                 for k = 1:numel(fields)
                     v = obj.LastWorkspace.(fields{k});
@@ -210,10 +229,6 @@ classdef ResultsController < handle
         end
 
         function onPlot(obj)
-            if ~isstruct(obj.LastWorkspace) || ...
-                    isempty(fieldnames(obj.LastWorkspace))
-                return;
-            end
             xName = obj.XDrop.Value;
             if isempty(xName) || strcmp(xName, '(无)')
                 return;
@@ -226,15 +241,19 @@ classdef ResultsController < handle
                     strcmp(yNames{1}, '(无)'))
                 return;
             end
-            x = obj.LastWorkspace.(xName);
+            S = obj.loadVariables([{xName}, yNames]);
+            if ~isfield(S, xName)
+                return;
+            end
+            x = S.(xName);
             cla(obj.UIAxes);
             hold(obj.UIAxes, 'on');
             leg = {};
             for k = 1:numel(yNames)
-                if ~isfield(obj.LastWorkspace, yNames{k})
+                if ~isfield(S, yNames{k})
                     continue;
                 end
-                y = obj.LastWorkspace.(yNames{k});
+                y = S.(yNames{k});
                 if numel(y) ~= numel(x)
                     continue;
                 end
@@ -304,12 +323,6 @@ classdef ResultsController < handle
                     'Icon', 'warning');
                 return;
             end
-            if ~isstruct(obj.LastWorkspace) || ...
-                    isempty(fieldnames(obj.LastWorkspace))
-                obj.alert('工作区里没有可导出的变量。', ...
-                    '没有数据', 'Icon', 'warning');
-                return;
-            end
             xName = obj.XDrop.Value;
             if isempty(xName) || strcmp(xName, '(无)')
                 return;
@@ -322,14 +335,20 @@ classdef ResultsController < handle
                     strcmp(yNames{1}, '(无)'))
                 return;
             end
-            x = obj.LastWorkspace.(xName);
+            S = obj.loadVariables([{xName}, yNames]);
+            if ~isfield(S, xName)
+                obj.alert('工作区里没有可导出的变量。', ...
+                    '没有数据', 'Icon', 'warning');
+                return;
+            end
+            x = S.(xName);
             cols = {x(:)};
             names = {matlab.lang.makeValidName(xName)};
             for k = 1:numel(yNames)
-                if ~isfield(obj.LastWorkspace, yNames{k})
+                if ~isfield(S, yNames{k})
                     continue;
                 end
-                y = obj.LastWorkspace.(yNames{k});
+                y = S.(yNames{k});
                 if numel(y) ~= numel(x)
                     continue;
                 end
@@ -401,6 +420,32 @@ classdef ResultsController < handle
                 obj.LastRun.figureHandles = gobjects(0);
             end
             obj.StatusLabel.Text = '已关闭本次运行产生的图窗。';
+        end
+
+        function matFile = workspaceMatFile(obj)
+            matFile = '';
+            if isfield(obj.LastRun, 'matFile')
+                matFile = obj.LastRun.matFile;
+            end
+        end
+
+        function S = loadVariables(obj, names)
+            S = struct();
+            matFile = obj.workspaceMatFile();
+            if ~isempty(matFile) && isfile(matFile)
+                try
+                    S = load(matFile, names{:});
+                    return;
+                catch
+                end
+            end
+            if isstruct(obj.LastWorkspace)
+                for k = 1:numel(names)
+                    if isfield(obj.LastWorkspace, names{k})
+                        S.(names{k}) = obj.LastWorkspace.(names{k});
+                    end
+                end
+            end
         end
 
         function alert(obj, message, title, varargin)

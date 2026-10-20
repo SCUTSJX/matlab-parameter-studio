@@ -80,6 +80,24 @@ function run_tests()
         'workspace capture limit should skip oversized variables');
     fprintf('  workspace capture limit: ok\n');
 
+    lazyDir = fullfile(tempdir, 'mps_lazy_run');
+    if isfolder(lazyDir)
+        rmdir(lazyDir, 's');
+    end
+    rLazy = mps.runScript(demo, scriptPath, lazyDir, ...
+        'LazyWorkspaceMB', 0);
+    assert(rLazy.ok, rLazy.error);
+    assert(~isempty(rLazy.matFile) && isfile(rLazy.matFile), ...
+        'lazy run should save workspace.mat');
+    assert(isempty(fieldnames(rLazy.workspaceData)), ...
+        'lazy run should not copy the full workspace into memory');
+    assert(any(strcmp({rLazy.workspace.name}, 'k')), ...
+        'lazy run should still return a workspace summary');
+    SLazy = load(rLazy.matFile, 'k');
+    assert(abs(SLazy.k - 8) < 1e-12, ...
+        'lazy workspace.mat should contain the run result');
+    fprintf('  lazy workspace: ok\n');
+
     % --- 3b. Reused figure capture ---------------------------------------
     reuseFig = figure(1);
     clf(reuseFig);
@@ -673,7 +691,45 @@ function run_tests()
     assert(multiOut.run.ok, 'multi-file project run failed');
     assert(abs(multiOut.run.workspaceData.y - 57) < 1e-12, ...
         'multi-file project edits were not both applied');
+    pMulti2 = pMulti;
+    gi = find(strcmp({pMulti2.name}, 'c.gain'), 1);
+    bi = find(strcmp({pMulti2.name}, 'h.bias'), 1);
+    pMulti2(gi).newValue = '3';
+    pMulti2(bi).newValue = '9';
+    multiExec2 = mps.ProjectRunExecutor( ...
+        fullfile(multiRoot, 'entry.m'), fullfile(multiRoot, 'entry.m'), ...
+        pMulti2, false);
+    multiExec2.Progress = @(msg) [];
+    multiOut2 = multiExec2.run();
+    assert(abs(multiOut2.run.workspaceData.y - 39) < 1e-12, ...
+        'reused project shadow must receive fresh edits');
     rmdir(multiRoot, 's');
+
+    sweepProject = fullfile(tempdir, 'mps_project_sweep_test');
+    if isfolder(sweepProject)
+        rmdir(sweepProject, 's');
+    end
+    mkdir(sweepProject);
+    fid = fopen(fullfile(sweepProject, 'config.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'function c=config()\nc.gain=1;\nend\n');
+    fclose(fid);
+    fid = fopen(fullfile(sweepProject, 'entry.m'), 'w', 'n', 'UTF-8');
+    fprintf(fid, 'c=config(); y=c.gain*10;\n');
+    fclose(fid);
+    pSweepProject = mps.scanProject(sweepProject);
+    gs = find(strcmp({pSweepProject.name}, 'c.gain'), 1);
+    projectSweep = mps.SweepRunner( ...
+        fullfile(sweepProject, 'entry.m'), pSweepProject, gs, ...
+        {[1 2]}, false, '', {}, false);
+    projectSweep.ProjectMode = true;
+    projectSweep.EntryFile = fullfile(sweepProject, 'entry.m');
+    projectSweep.Progress = @(fraction, message) [];
+    projectSweepOut = projectSweep.run();
+    assert(projectSweepOut.count == 2, ...
+        'project sweep should run two scenarios');
+    assert(isfile(projectSweepOut.report), ...
+        'project sweep report missing');
+    rmdir(sweepProject, 's');
     fprintf('  project entry execution: ok\n');
 
     % --- 21. SweepRunner -------------------------------------------------

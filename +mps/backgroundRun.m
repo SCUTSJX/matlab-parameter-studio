@@ -1,5 +1,5 @@
 function out = backgroundRun(sourceFile, params, maxVariableMB, maxTotalMB, ...
-    saveFigFiles, figureResolution)
+    saveFigFiles, figureResolution, lazyWorkspaceMB)
 %BACKGROUNDRUN Worker-side entry for a single background simulation.
 %
 %   Called by App through parfeval.  Figure handles are not serializable, so
@@ -8,9 +8,11 @@ function out = backgroundRun(sourceFile, params, maxVariableMB, maxTotalMB, ...
 
     if nargin < 5, saveFigFiles = false; end
     if nargin < 6, figureResolution = 150; end
+    if nargin < 7, lazyWorkspaceMB = 32; end
     executor = mps.RunExecutor(sourceFile, params, false);
     executor.MaxVariableMB = maxVariableMB;
     executor.MaxTotalMB = maxTotalMB;
+    executor.LazyWorkspaceMB = lazyWorkspaceMB;
     executor.SaveFigFiles = saveFigFiles;
     executor.FigureResolution = figureResolution;
     executor.Progress = @(message) [];

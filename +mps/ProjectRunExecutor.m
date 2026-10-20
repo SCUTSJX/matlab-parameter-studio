@@ -17,10 +17,13 @@ classdef ProjectRunExecutor < handle
         KeepFigures = false
         MaxVariableMB = 100
         MaxTotalMB = 512
+        LazyWorkspaceMB = 32
         SaveFigFiles = false
         FigureResolution = 150
         OutDir = ''
         CopyProjectResults = true
+        UseShadowCache = true
+        ResetShadowResults = true
         SlimWorkspace = false
         SlimNames = {}
         Progress = @(message) []
@@ -50,12 +53,27 @@ classdef ProjectRunExecutor < handle
                 relativeEntry = obj.EntryFile;
             end
 
-            shadowRoot = fullfile(tempdir, sprintf( ...
-                'mps_project_%s_%d', datestr(now, 'yyyymmdd_HHMMSSFFF'), ...
-                randi(1e9)));
-            cleaner = onCleanup(@() cleanupTree(shadowRoot)); %#ok<NASGU>
-            obj.Progress('复制项目到临时目录...');
-            mps.copyProjectTree(projectRoot, shadowRoot);
+            if obj.UseShadowCache
+                obj.Progress('同步项目影子目录...');
+                shadowRoot = mps.prepareShadowProject(projectRoot);
+                cleaner = onCleanup(@() []); %#ok<NASGU>
+            else
+                shadowRoot = fullfile(tempdir, sprintf( ...
+                    'mps_project_%s_%d', datestr(now, 'yyyymmdd_HHMMSSFFF'), ...
+                    randi(1e9)));
+                cleaner = onCleanup(@() cleanupTree(shadowRoot)); %#ok<NASGU>
+                obj.Progress('复制项目到临时目录...');
+                mps.copyProjectTree(projectRoot, shadowRoot);
+            end
+            if obj.ResetShadowResults
+                shadowResults = fullfile(shadowRoot, '运行结果');
+                if isfolder(shadowResults)
+                    try
+                        rmdir(shadowResults, 's');
+                    catch
+                    end
+                end
+            end
 
             if any(arrayfun(@(p) isfield(p, 'manual') && logical(p.manual), ...
                     obj.Params))
@@ -98,11 +116,17 @@ classdef ProjectRunExecutor < handle
             r = mps.runScript(obj.EntryFile, wrapper, outDir, ...
                 'MaxVariableMB', obj.MaxVariableMB, ...
                 'MaxTotalMB', obj.MaxTotalMB, ...
+                'LazyWorkspaceMB', obj.LazyWorkspaceMB, ...
                 'SaveFigFiles', obj.SaveFigFiles, ...
                 'FigureResolution', obj.FigureResolution);
             if obj.SlimWorkspace
-                r.workspaceData = slimWorkspaceData( ...
-                    r.workspaceData, obj.SlimNames);
+                if isempty(r.workspaceData) && ~isempty(r.matFile) && ...
+                        isfile(r.matFile)
+                    r.workspaceData = loadSelected(r.matFile, obj.SlimNames);
+                else
+                    r.workspaceData = slimWorkspaceData( ...
+                        r.workspaceData, obj.SlimNames);
+                end
             end
             clear figCleaner;
             obj.handleFigures(r);
@@ -179,6 +203,25 @@ classdef ProjectRunExecutor < handle
                 r.figureHandles = gobjects(0);
             end
         end
+    end
+end
+
+% -------------------------------------------------------------------------
+function slim = loadSelected(matFile, names)
+    slim = struct();
+    names = names(~cellfun(@isempty, names));
+    names = names(~strcmp(names, '(无)'));
+    if isempty(names), return; end
+    try
+        S = load(matFile, names{:});
+        for k = 1:numel(names)
+            if isfield(S, names{k}) && ...
+                    (isnumeric(S.(names{k})) || islogical(S.(names{k}))) && ...
+                    isvector(S.(names{k}))
+                slim.(names{k}) = S.(names{k});
+            end
+        end
+    catch
     end
 end
 

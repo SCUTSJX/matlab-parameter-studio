@@ -1,6 +1,6 @@
 function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
     runDir, keepFigures, xName, yNames, maxVariableMB, maxTotalMB, ...
-    saveFigFiles, figureResolution)
+    saveFigFiles, figureResolution, lazyWorkspaceMB)
 %RUNSWEEPSCENARIO Execute one sweep scenario on a parallel worker.
 %
 %   Returns a slim, serializable result: figure paths, workspace summary and
@@ -8,6 +8,7 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
 
     if nargin < 11, saveFigFiles = false; end
     if nargin < 12, figureResolution = 150; end
+    if nargin < 13, lazyWorkspaceMB = 32; end
     out = struct('ok', false, 'error', '', ...
         'figures', struct('path', {}, 'title', {}, 'figFile', {}), ...
         'elapsed', 0, 'workspaceData', struct(), ...
@@ -39,6 +40,7 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
         end
         r = mps.runScript(sourceFile, tempScript, runDir, ...
             'MaxVariableMB', maxVariableMB, 'MaxTotalMB', maxTotalMB, ...
+            'LazyWorkspaceMB', lazyWorkspaceMB, ...
             'SaveFigFiles', saveFigFiles, ...
             'FigureResolution', figureResolution);
         try
@@ -54,7 +56,12 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
         out.figures = r.figures;
         out.elapsed = r.elapsedSeconds;
         out.workspace = r.workspace;
-        out.workspaceData = slimWorkspace(r.workspaceData, xName, yNames);
+        if isempty(r.workspaceData) && ~isempty(r.matFile) && ...
+                isfile(r.matFile)
+            out.workspaceData = loadSelected(r.matFile, xName, yNames);
+        else
+            out.workspaceData = slimWorkspace(r.workspaceData, xName, yNames);
+        end
 
         if ~keepFigures
             for k = 1:numel(r.figureHandles)
@@ -80,6 +87,35 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
             delete(tempScript);
         catch
         end
+    end
+end
+
+% -------------------------------------------------------------------------
+function slim = loadSelected(matFile, xName, yNames)
+    slim = struct();
+    names = {};
+    if ~isempty(xName) && ~strcmp(xName, '(无)')
+        names{end+1} = xName;
+    end
+    if ischar(yNames) || isstring(yNames)
+        yNames = cellstr(yNames);
+    end
+    for k = 1:numel(yNames)
+        if ~strcmp(yNames{k}, '(无)')
+            names{end+1} = yNames{k}; %#ok<AGROW>
+        end
+    end
+    if isempty(names), return; end
+    try
+        S = load(matFile, names{:});
+        for k = 1:numel(names)
+            if isfield(S, names{k}) && ...
+                    (isnumeric(S.(names{k})) || islogical(S.(names{k}))) && ...
+                    isvector(S.(names{k}))
+                slim.(names{k}) = S.(names{k});
+            end
+        end
+    catch
     end
 end
 

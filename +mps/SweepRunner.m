@@ -14,6 +14,8 @@ classdef SweepRunner < handle
 
     properties
         SourceFile = ''
+        EntryFile = ''
+        ProjectMode = false
         Params = struct([])
         ActiveIdx = []
         Values = {}
@@ -23,6 +25,7 @@ classdef SweepRunner < handle
         KeepFigures = false
         MaxVariableMB = 100
         MaxTotalMB = 512
+        LazyWorkspaceMB = 32
         SaveFigFiles = false
         FigureResolution = 150
         MaxScenarios = 24
@@ -109,6 +112,31 @@ classdef SweepRunner < handle
     end
 
     methods (Access = private)
+        function slim = loadSelected(obj, matFile)
+            names = {};
+            if ~isempty(obj.XName) && ~strcmp(obj.XName, '(无)')
+                names{end+1} = obj.XName;
+            end
+            for k = 1:numel(obj.YNames)
+                if ~strcmp(obj.YNames{k}, '(无)')
+                    names{end+1} = obj.YNames{k}; %#ok<AGROW>
+                end
+            end
+            slim = struct();
+            if isempty(names), return; end
+            try
+                S = load(matFile, names{:});
+                for k = 1:numel(names)
+                    if isfield(S, names{k}) && ...
+                            (isnumeric(S.(names{k})) || islogical(S.(names{k}))) && ...
+                            isvector(S.(names{k}))
+                        slim.(names{k}) = S.(names{k});
+                    end
+                end
+            catch
+            end
+        end
+
         function results = emptyResults(~)
             results = struct('label', {}, 'runDir', {}, 'ok', {}, ...
                 'error', {}, 'figures', {}, 'elapsed', {}, ...
@@ -142,28 +170,55 @@ classdef SweepRunner < handle
                     params(obj.ActiveIdx(j)).use = true;
                 end
 
-                [tempScript, keepScript] = obj.makeTempScript(runDir);
-                cleaner = onCleanup(@() obj.removeTempScript( ...
-                    tempScript, keepScript)); %#ok<NASGU>
-                mps.applyEdits(obj.SourceFile, params, tempScript, ...
-                    'NeutralizeCloseAll', true);
-                r = mps.runScript(obj.SourceFile, tempScript, runDir, ...
-                    'MaxVariableMB', obj.MaxVariableMB, ...
-                    'MaxTotalMB', obj.MaxTotalMB, ...
-                    'SaveFigFiles', obj.SaveFigFiles, ...
-                    'FigureResolution', obj.FigureResolution);
-                try
-                    if ~isfile(keepScript) && ...
-                            ~strcmpi(tempScript, keepScript)
-                        copyfile(tempScript, keepScript);
+                if obj.ProjectMode
+                    ex = mps.ProjectRunExecutor(obj.EntryFile, ...
+                        obj.EntryFile, params, false);
+                    ex.OutDir = runDir;
+                    ex.MaxVariableMB = obj.MaxVariableMB;
+                    ex.MaxTotalMB = obj.MaxTotalMB;
+                    ex.LazyWorkspaceMB = obj.LazyWorkspaceMB;
+                    ex.SaveFigFiles = obj.SaveFigFiles;
+                    ex.FigureResolution = obj.FigureResolution;
+                    ex.CopyProjectResults = false;
+                    ex.UseShadowCache = true;
+                    ex.ResetShadowResults = true;
+                    ex.SlimWorkspace = true;
+                    if obj.Overlay
+                        ex.SlimNames = [{obj.XName}, obj.YNames];
                     end
-                    if isfile(keepScript)
-                        r.scriptPath = keepScript;
+                    ex.Progress = @(message) obj.Progress( ...
+                        (k - 1) / max(total, 1), message);
+                    out = ex.run();
+                    r = out.run;
+                else
+                    [tempScript, keepScript] = obj.makeTempScript(runDir);
+                    cleaner = onCleanup(@() obj.removeTempScript( ...
+                        tempScript, keepScript)); %#ok<NASGU>
+                    mps.applyEdits(obj.SourceFile, params, tempScript, ...
+                        'NeutralizeCloseAll', true);
+                    r = mps.runScript(obj.SourceFile, tempScript, runDir, ...
+                        'MaxVariableMB', obj.MaxVariableMB, ...
+                        'MaxTotalMB', obj.MaxTotalMB, ...
+                        'LazyWorkspaceMB', obj.LazyWorkspaceMB, ...
+                        'SaveFigFiles', obj.SaveFigFiles, ...
+                        'FigureResolution', obj.FigureResolution);
+                    try
+                        if ~isfile(keepScript) && ...
+                                ~strcmpi(tempScript, keepScript)
+                            copyfile(tempScript, keepScript);
+                        end
+                        if isfile(keepScript)
+                            r.scriptPath = keepScript;
+                        end
+                    catch
                     end
-                catch
+                    clear cleaner;
                 end
-                clear cleaner;
                 obj.handleFigures(r);
+                if obj.Overlay && isempty(r.workspaceData) && ...
+                        ~isempty(r.matFile) && isfile(r.matFile)
+                    r.workspaceData = obj.loadSelected(r.matFile);
+                end
 
                 results(end+1) = struct( ...
                     'label', scenarios(k).label, ...
@@ -200,11 +255,23 @@ classdef SweepRunner < handle
                 if ~isfolder(runDir)
                     mkdir(runDir);
                 end
-                futures{k} = parfeval(pool, @mps.runSweepScenario, 1, ...
-                    obj.SourceFile, obj.Params, obj.ActiveIdx, ...
-                    scenarios(k).values, runDir, false, obj.XName, ...
-                    obj.YNames, obj.MaxVariableMB, obj.MaxTotalMB, ...
-                    obj.SaveFigFiles, obj.FigureResolution);
+                if obj.ProjectMode
+                    futures{k} = parfeval(pool, ...
+                        @mps.runProjectSweepScenario, 1, ...
+                        fileparts(obj.EntryFile), obj.EntryFile, ...
+                        obj.Params, obj.ActiveIdx, scenarios(k).values, ...
+                        runDir, obj.XName, obj.YNames, ...
+                        obj.MaxVariableMB, obj.MaxTotalMB, ...
+                        obj.LazyWorkspaceMB, obj.SaveFigFiles, ...
+                        obj.FigureResolution);
+                else
+                    futures{k} = parfeval(pool, @mps.runSweepScenario, 1, ...
+                        obj.SourceFile, obj.Params, obj.ActiveIdx, ...
+                        scenarios(k).values, runDir, false, obj.XName, ...
+                        obj.YNames, obj.MaxVariableMB, obj.MaxTotalMB, ...
+                        obj.SaveFigFiles, obj.FigureResolution, ...
+                        obj.LazyWorkspaceMB);
+                end
             end
             futureArray = [futures{:}];
 
