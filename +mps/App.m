@@ -56,8 +56,7 @@ classdef App < handle
         Save
         TableCtl
         SourceCtl
-        Presets = struct([])
-        PresetsFile = ''
+        PresetCtl
         Busy = false
         BackgroundMgr
         SweepStartedAt = 0
@@ -86,6 +85,12 @@ classdef App < handle
                 @(message) app.backgroundProgress(message);
             app.BackgroundMgr.FinishedFcn = ...
                 @(out, message) app.backgroundFinished(out, message);
+            app.PresetCtl = mps.PresetController(app, app.PresetDrop, ...
+                app.PresetNameField, app.PresetSaveButton, ...
+                app.PresetLoadButton, app.PresetDeleteButton, ...
+                app.StatusLabel);
+            app.PresetCtl.UndoFcn = @() app.pushUndo();
+            app.PresetCtl.RefreshFcn = @() app.refreshTable();
             app.UIFigure.UserData = app;
             app.UIFigure.Visible = visible;
         end
@@ -246,7 +251,7 @@ classdef App < handle
                     end
                 end
             end
-            app.loadPresetsFromDisk();
+            app.PresetCtl.loadFromDisk();
             app.Results.clear();
             app.TableCtl.clearSelection();
 
@@ -409,30 +414,17 @@ classdef App < handle
 
         function saveCurrentPreset(app, name)
             %SAVECURRENTPRESET Store the current use/newValue/locked state.
-            if isempty(app.SourceFile)
-                error('mps:App:noFile', '请先打开一个 .m 文件。');
-            end
-            app.Presets = mps.savePreset(app.SourceFile, name, app.Params);
-            app.refreshPresets();
+            app.PresetCtl.saveCurrent(name);
         end
 
         function names = listPresets(app)
             %LISTPRESETS Names of the presets saved for the current file.
-            names = {};
-            if ~isempty(app.Presets)
-                names = {app.Presets.name};
-            end
+            names = app.PresetCtl.list();
         end
 
         function stats = applyPresetByName(app, name)
             %APPLYPRESETBYNAME Load a preset into the current parameter list.
-            idx = find(strcmp({app.Presets.name}, name), 1);
-            if isempty(idx)
-                error('mps:App:presetNotFound', '找不到参数集：%s', name);
-            end
-            app.pushUndo();
-            [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
-            app.refreshTable();
+            stats = app.PresetCtl.applyByName(name);
         end
 
         function summary = runSweepWithValues(app, names, valueLists, xName, yNames)
@@ -555,9 +547,9 @@ classdef App < handle
             callbacks.onImportAnnotations = @(s, e) app.onImportAnnotations();
             callbacks.onClearAnnotations = @(s, e) app.onClearAnnotations();
             callbacks.onToggleLock = @(s, e) app.onToggleLock();
-            callbacks.onSavePreset = @(s, e) app.onSavePreset();
-            callbacks.onLoadPreset = @(s, e) app.onLoadPreset();
-            callbacks.onDeletePreset = @(s, e) app.onDeletePreset();
+            callbacks.onSavePreset = @(s, e) app.PresetCtl.onSave();
+            callbacks.onLoadPreset = @(s, e) app.PresetCtl.onLoad();
+            callbacks.onDeletePreset = @(s, e) app.PresetCtl.onDelete();
             callbacks.onOpenSweep = @(s, e) app.onOpenSweep();
             callbacks.onAddManualParam = @(s, e) app.onAddManualParam();
             callbacks.onChooseEntry = @(s, e) app.onChooseEntry();
@@ -661,7 +653,7 @@ classdef App < handle
             app.TableCtl.setSource(entryFile, app.SourceStamp);
             app.TableCtl.RecommendedMinScore = 5;
             app.TableCtl.resetHistory();
-            app.loadPresetsFromDisk();
+            app.PresetCtl.loadFromDisk();
             app.Results.clear();
             app.TableCtl.clearSelection();
             app.SourcePreview.Value = {''};
@@ -1114,144 +1106,6 @@ classdef App < handle
 
         function onToggleLock(app)
             app.TableCtl.onToggleLock();
-        end
-
-        % ---- Parameter presets -------------------------------------
-        function loadPresetsFromDisk(app)
-            app.Presets = struct([]);
-            app.PresetsFile = '';
-            if ~isempty(app.SourceFile)
-                app.PresetsFile = mps.presetsPath(app.SourceFile);
-                try
-                    app.Presets = mps.readPresets(app.SourceFile);
-                catch err
-                    app.Presets = struct([]);
-                    mps.logWarning('读取参数集', err);
-                end
-            end
-            app.refreshPresets();
-        end
-
-        function refreshPresets(app)
-            names = {};
-            if ~isempty(app.Presets)
-                names = {app.Presets.name};
-            end
-            if isempty(names)
-                app.PresetDrop.Items = {'(无参数集)'};
-                app.PresetDrop.Value = '(无参数集)';
-                app.PresetLoadButton.Enable = 'off';
-                app.PresetDeleteButton.Enable = 'off';
-                return;
-            end
-            app.PresetDrop.Items = names;
-            if ~any(strcmp(names, app.PresetDrop.Value))
-                app.PresetDrop.Value = names{1};
-            end
-            if isempty(app.SourceFile)
-                app.PresetLoadButton.Enable = 'off';
-                app.PresetDeleteButton.Enable = 'off';
-            else
-                app.PresetLoadButton.Enable = 'on';
-                app.PresetDeleteButton.Enable = 'on';
-            end
-        end
-
-        function onSavePreset(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            name = strtrim(char(app.PresetNameField.Value));
-            if isempty(name) && ~isempty(app.Presets)
-                if ~strcmp(app.PresetDrop.Value, '(无参数集)')
-                    name = app.PresetDrop.Value;
-                end
-            end
-            if isempty(name)
-                uialert(app.UIFigure, ...
-                    '请输入参数集名称，或在下拉框里选择一个已有参数集覆盖保存。', ...
-                    '缺少名称', 'Icon', 'warning');
-                return;
-            end
-            exists = any(strcmp({app.Presets.name}, name));
-            if exists
-                choice = uiconfirm(app.UIFigure, ...
-                    sprintf('参数集“%s”已存在，是否覆盖？', name), ...
-                    '覆盖参数集', 'Options', {'覆盖', '取消'}, ...
-                    'DefaultOption', 2, 'CancelOption', 2);
-                if ~strcmp(choice, '覆盖')
-                    return;
-                end
-            end
-            try
-                app.Presets = mps.savePreset(app.SourceFile, name, app.Params);
-            catch err
-                uialert(app.UIFigure, err.message, '保存失败', 'Icon', 'error');
-                return;
-            end
-            app.PresetNameField.Value = '';
-            app.refreshPresets();
-            app.PresetDrop.Value = name;
-            app.StatusLabel.Text = sprintf('已保存参数集：%s（%s）', ...
-                name, app.PresetsFile);
-        end
-
-        function onLoadPreset(app)
-            if isempty(app.Presets) || isempty(app.SourceFile)
-                uialert(app.UIFigure, '还没有可载入的参数集。', ...
-                    '没有参数集', 'Icon', 'warning');
-                return;
-            end
-            name = app.PresetDrop.Value;
-            idx = find(strcmp({app.Presets.name}, name), 1);
-            if isempty(idx)
-                return;
-            end
-            app.pushUndo();
-            try
-                [app.Params, stats] = mps.applyPreset(app.Params, app.Presets(idx));
-            catch err
-                uialert(app.UIFigure, err.message, '载入失败', 'Icon', 'error');
-                return;
-            end
-            app.refreshTable();
-            app.StatusLabel.Text = sprintf( ...
-                '已载入参数集：%s（匹配 %d，重名跳过 %d，未匹配 %d）', ...
-                name, stats.matched, stats.ambiguous, stats.unmatched);
-            if stats.unmatched > 0 || stats.ambiguous > 0
-                uialert(app.UIFigure, sprintf( ...
-                    ['载入“%s”：匹配 %d，重名跳过 %d，未匹配 %d。\n\n' ...
-                     '未匹配通常是因为脚本改过变量名或行号；参数集里的 id ' ...
-                     '保留的是保存时的位置。'], name, stats.matched, ...
-                    stats.ambiguous, stats.unmatched), ...
-                    '载入参数集', 'Icon', 'warning');
-            end
-        end
-
-        function onDeletePreset(app)
-            if isempty(app.Presets)
-                return;
-            end
-            name = app.PresetDrop.Value;
-            choice = uiconfirm(app.UIFigure, ...
-                sprintf('删除参数集“%s”？', name), '删除参数集', ...
-                'Options', {'删除', '取消'}, ...
-                'DefaultOption', 2, 'CancelOption', 2);
-            if ~strcmp(choice, '删除')
-                return;
-            end
-            keep = ~strcmp({app.Presets.name}, name);
-            app.Presets = app.Presets(keep);
-            try
-                mps.writePresets(app.SourceFile, app.Presets);
-            catch err
-                uialert(app.UIFigure, err.message, '删除失败', 'Icon', 'error');
-                return;
-            end
-            app.refreshPresets();
-            app.StatusLabel.Text = sprintf('已删除参数集：%s', name);
         end
 
         % ---- Batch sweep ------------------------------------------
@@ -1712,7 +1566,7 @@ classdef App < handle
                 end
                 if ~isempty(app.SourceFile)
                     app.PresetSaveButton.Enable = 'on';
-                    if isempty(app.Presets)
+                    if isempty(app.PresetCtl.Presets)
                         app.PresetLoadButton.Enable = 'off';
                         app.PresetDeleteButton.Enable = 'off';
                     else
