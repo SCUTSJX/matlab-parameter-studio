@@ -59,6 +59,7 @@ classdef App < handle
         PresetCtl
         AnnotationCtl
         SweepCtl
+        HistoryCtl
         Busy = false
         BackgroundMgr
     end
@@ -109,6 +110,9 @@ classdef App < handle
             sweepCtx.ConfirmFcn = @(label) ...
                 app.confirmInteractiveCalls(label);
             app.SweepCtl = mps.SweepController(sweepCtx);
+            app.HistoryCtl = mps.RunHistoryController(app, app.StatusLabel);
+            app.HistoryCtl.UndoFcn = @() app.pushUndo();
+            app.HistoryCtl.RefreshFcn = @() app.refreshTable();
             app.UIFigure.UserData = app;
             app.UIFigure.Visible = visible;
         end
@@ -533,7 +537,7 @@ classdef App < handle
             callbacks.onOpenFolder = @(s, e) app.Results.openFolder();
             callbacks.onExportParams = @(s, e) app.onExportParams();
             callbacks.onCloseFigures = @(s, e) app.Results.closeFigures();
-            callbacks.onRunHistory = @(s, e) app.onRunHistory();
+            callbacks.onRunHistory = @(s, e) app.HistoryCtl.onOpen();
             callbacks.onHelp = @(s, e) app.onHelp();
             callbacks.refreshTable = @() app.refreshTable();
             callbacks.onSelectAll = @(s, e) app.onSelectAll();
@@ -1122,86 +1126,6 @@ classdef App < handle
                 'Options', {'仍然继续', '取消'}, ...
                 'DefaultOption', 2, 'CancelOption', 2);
             ok = strcmp(choice, '仍然继续');
-        end
-
-        function onRunHistory(app)
-            %ONRUNHISTORY Browse past runs, compare any two, load params.
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            root = fullfile(fileparts(app.SourceFile), 'parameter_studio_runs');
-            dlg = mps.RunHistoryDialog(root, ...
-                'SourceFile', app.SourceFile, ...
-                'CurrentOutDir', app.Results.OutputDir);
-            uiwait(dlg.UIFigure);
-            result = dlg.Result;
-            delete(dlg);
-            if ~isstruct(result) || ~isfield(result, 'action') || ...
-                    ~strcmp(result.action, 'load')
-                return;
-            end
-            app.applyHistoryRun(result);
-        end
-
-        function applyHistoryRun(app, result)
-            %APPLYHISTORYRUN Load use/newValue/locked from an old run.
-            values = result.values;
-            if isempty(values)
-                uialert(app.UIFigure, '这次运行没有可载入的参数。', ...
-                    '无法载入', 'Icon', 'warning');
-                return;
-            end
-
-            meta = struct();
-            if isfield(result, 'meta') && isstruct(result.meta)
-                meta = result.meta;
-            end
-            if isfield(meta, 'sourceFile') && ~isempty(meta.sourceFile) && ...
-                    ~strcmpi(meta.sourceFile, app.SourceFile) && ...
-                    strcmp(app.UIFigure.Visible, 'on')
-                choice = uiconfirm(app.UIFigure, sprintf( ...
-                    ['这次运行来自另一个脚本：\n%s\n\n' ...
-                     '参数将尽量按名字和行号匹配，是否继续？'], ...
-                    meta.sourceFile), '源文件不同', ...
-                    'Options', {'继续', '取消'}, ...
-                    'DefaultOption', 2, 'CancelOption', 2);
-                if ~strcmp(choice, '继续')
-                    return;
-                end
-            end
-            if any([app.Params.isChanged]) && ...
-                    strcmp(app.UIFigure.Visible, 'on')
-                choice = uiconfirm(app.UIFigure, ...
-                    '载入历史参数会覆盖当前的新值，是否继续？', ...
-                    '覆盖当前修改', 'Options', {'继续', '取消'}, ...
-                    'DefaultOption', 2, 'CancelOption', 2);
-                if ~strcmp(choice, '继续')
-                    return;
-                end
-            end
-
-            preset = struct('name', '历史运行', 'values', values);
-            app.pushUndo();
-            try
-                [app.Params, stats] = mps.applyPreset(app.Params, preset);
-            catch err
-                uialert(app.UIFigure, err.message, '载入失败', ...
-                    'Icon', 'error');
-                return;
-            end
-            app.refreshTable();
-            app.StatusLabel.Text = sprintf( ...
-                '已从历史运行载入参数：匹配 %d，重名跳过 %d，未匹配 %d。', ...
-                stats.matched, stats.ambiguous, stats.unmatched);
-            if stats.matched == 0
-                uialert(app.UIFigure, sprintf( ...
-                    ['没有匹配到参数（未匹配 %d 个）。\n\n' ...
-                     '通常是因为脚本改过变量名或行号；历史记录里的 ' ...
-                     'name + line 只在原脚本上最准确。'], stats.unmatched), ...
-                    '没有匹配', 'Icon', 'warning');
-            end
         end
 
         % -----------------------------------------------------------------
