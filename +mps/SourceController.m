@@ -17,6 +17,66 @@ classdef SourceController < handle
             obj.TableCtl = tableCtl;
         end
 
+        function openFileDialog(obj)
+            app = obj.App;
+            if isempty(app.SourceFile)
+                startDir = pwd;
+            else
+                startDir = fileparts(app.SourceFile);
+            end
+            [file, path] = uigetfile({'*.m', 'MATLAB 脚本 (*.m)'}, ...
+                '选择 MATLAB 脚本', startDir);
+            if isequal(file, 0)
+                return;
+            end
+            app.loadFile(fullfile(path, file));
+        end
+
+        function openInEditor(obj, varargin)
+            %OPENINEDITOR Jump to the selected parameter's source line.
+            app = obj.App;
+            if ~isempty(varargin) && isstruct(varargin{1}) && ...
+                    isfield(varargin{1}, 'Indices') && ...
+                    ~isempty(varargin{1}.Indices)
+                % Only the read-only 参数/行 columns open the editor; a
+                % double-click on 新值 must keep working as cell editing.
+                indices = varargin{1}.Indices;
+                if size(indices, 2) < 2
+                    return;
+                end
+                col = indices(1, 2);
+                if ~ismember(col, [4 7])
+                    return;
+                end
+            end
+            if isempty(app.SourceFile) || isempty(app.SelectedParams)
+                uialert(app.UIFigure, '请先在参数表里选中一行。', ...
+                    '没有选中参数', 'Icon', 'warning');
+                return;
+            end
+            idx = app.SelectedParams(end);
+            lineNo = app.Params(idx).line;
+            file = app.Params(idx).sourceFile;
+            if isempty(file)
+                file = app.SourceFile;
+            end
+            try
+                matlab.desktop.editor.openAndGoToLine( ...
+                    file, max(1, lineNo));
+                obj.StatusFcn(sprintf( ...
+                    '已在 MATLAB 编辑器中打开：%s 第 %d 行。', file, lineNo));
+            catch
+                try
+                    edit(file);
+                    obj.StatusFcn(sprintf( ...
+                        '已打开源文件（未能定位到第 %d 行）。', lineNo));
+                catch err
+                    uialert(app.UIFigure, err.message, '打开失败', ...
+                        'Icon', 'error');
+                end
+            end
+        end
+
         function changed = sourceChanged(obj)
             changed = false;
             app = obj.App;

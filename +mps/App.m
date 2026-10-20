@@ -12,6 +12,7 @@ classdef App < handle
         ProjectMode = false
         ProjectStamp = ''
         SourceStamp = struct()
+        IsFunctionFile = false
         Results
         MaxVariableMB = 100
         MaxTotalMB = 512
@@ -52,7 +53,6 @@ classdef App < handle
         PresetDrop, PresetNameField, PresetSaveButton, PresetLoadButton
         PresetDeleteButton, SweepButton, BulkButton, ManualButton, EntryButton
         UndoButton, RedoButton
-        IsFunctionFile = false
         Save
         TableCtl
         SourceCtl
@@ -60,6 +60,8 @@ classdef App < handle
         AnnotationCtl
         SweepCtl
         HistoryCtl
+        ProjectCtl
+        ManualCtl
         Busy = false
         BackgroundMgr
     end
@@ -113,6 +115,41 @@ classdef App < handle
             app.HistoryCtl = mps.RunHistoryController(app, app.StatusLabel);
             app.HistoryCtl.UndoFcn = @() app.pushUndo();
             app.HistoryCtl.RefreshFcn = @() app.refreshTable();
+            projectCtx = struct();
+            projectCtx.App = app;
+            projectCtx.TableCtl = app.TableCtl;
+            projectCtx.Results = app.Results;
+            projectCtx.PresetCtl = app.PresetCtl;
+            projectCtx.StatusLabel = app.StatusLabel;
+            projectCtx.SourcePreview = app.SourcePreview;
+            projectCtx.LogArea = app.LogArea;
+            projectCtx.FileLabel = app.FileLabel;
+            projectCtx.FileFilterDrop = app.FileFilterDrop;
+            projectCtx.RescanButton = app.RescanButton;
+            projectCtx.RunButton = app.RunButton;
+            projectCtx.SaveButton = app.SaveButton;
+            projectCtx.ExportButton = app.ExportButton;
+            projectCtx.SweepButton = app.SweepButton;
+            projectCtx.ManualButton = app.ManualButton;
+            projectCtx.EntryButton = app.EntryButton;
+            projectCtx.AnnotateTemplateButton = app.AnnotateTemplateButton;
+            projectCtx.ImportAnnotationButton = app.ImportAnnotationButton;
+            projectCtx.ClearAnnotationButton = app.ClearAnnotationButton;
+            projectCtx.LockButton = app.LockButton;
+            projectCtx.BulkButton = app.BulkButton;
+            projectCtx.CompareButton = app.CompareButton;
+            projectCtx.BackgroundCheck = app.BackgroundCheck;
+            projectCtx.ReportButton = app.ReportButton;
+            projectCtx.FolderButton = app.FolderButton;
+            projectCtx.CloseFiguresButton = app.CloseFiguresButton;
+            projectCtx.PlotButton = app.PlotButton;
+            projectCtx.SavePlotButton = app.SavePlotButton;
+            projectCtx.ExportCsvButton = app.ExportCsvButton;
+            projectCtx.RefreshFcn = @() app.refreshTable();
+            app.ProjectCtl = mps.ProjectController(projectCtx);
+            app.ManualCtl = mps.ManualParamController(app, app.StatusLabel);
+            app.ManualCtl.UndoFcn = @() app.pushUndo();
+            app.ManualCtl.RefreshFcn = @() app.refreshTable();
             app.UIFigure.UserData = app;
             app.UIFigure.Visible = visible;
         end
@@ -380,12 +417,12 @@ classdef App < handle
 
         function loadProject(app, entryFile)
             %LOADPROJECT Scan a project folder and classify params by file.
-            app.loadProjectInternal(entryFile);
+            app.ProjectCtl.load(entryFile);
         end
 
         function setEntryPoint(app, entryFile)
             %SETENTRYPOINT Run this entry script with edits from SourceFile.
-            app.setEntryPointInternal(entryFile);
+            app.ProjectCtl.setEntryPoint(entryFile);
         end
 
         function runCurrent(app)
@@ -528,8 +565,8 @@ classdef App < handle
         function callbacks = uiCallbacks(app)
             %UICALLBACKS Function handles used by mps.buildAppUI.
             callbacks = struct();
-            callbacks.onOpen = @(s, e) app.onOpen();
-            callbacks.onOpenProject = @(s, e) app.onOpenProject();
+            callbacks.onOpen = @(s, e) app.SourceCtl.openFileDialog();
+            callbacks.onOpenProject = @(s, e) app.ProjectCtl.onOpen();
             callbacks.onRescan = @(s, e) app.onRescan();
             callbacks.onRun = @(s, e) app.onRun();
             callbacks.onSaveTuned = @(s, e) app.onSaveTuned();
@@ -552,11 +589,11 @@ classdef App < handle
             callbacks.onLoadPreset = @(s, e) app.PresetCtl.onLoad();
             callbacks.onDeletePreset = @(s, e) app.PresetCtl.onDelete();
             callbacks.onOpenSweep = @(s, e) app.SweepCtl.onOpen();
-            callbacks.onAddManualParam = @(s, e) app.onAddManualParam();
-            callbacks.onChooseEntry = @(s, e) app.onChooseEntry();
+            callbacks.onAddManualParam = @(s, e) app.ManualCtl.onAdd();
+            callbacks.onChooseEntry = @(s, e) app.ProjectCtl.onChooseEntry();
             callbacks.onCellEdit = @(e) app.onCellEdit([], e);
             callbacks.onCellSelect = @(e) app.onCellSelect([], e);
-            callbacks.onOpenInEditor = @(e) app.onOpenInEditor(e);
+            callbacks.onOpenInEditor = @(e) app.SourceCtl.openInEditor(e);
             callbacks.undo = @() app.undoLastEdit();
             callbacks.redo = @() app.redoLastEdit();
             callbacks.showFigure = @() app.Results.showFigure();
@@ -588,7 +625,7 @@ classdef App < handle
             if strcmp(key, 'f5') || (strcmp(key, 'return') && hasCtrl)
                 app.onRun();
             elseif strcmp(key, 'o') && hasCtrl
-                app.onOpen();
+                app.SourceCtl.openFileDialog();
             elseif strcmp(key, 'b') && hasCtrl
                 app.onBulkEdit();
             elseif strcmp(key, 'z') && hasCtrl
@@ -602,178 +639,6 @@ classdef App < handle
             end
         end
 
-        function onOpen(app)
-            if isempty(app.SourceFile)
-                startDir = pwd;
-            else
-                startDir = fileparts(app.SourceFile);
-            end
-            [file, path] = uigetfile({'*.m', 'MATLAB 脚本 (*.m)'}, ...
-                '选择 MATLAB 脚本', startDir);
-            if isequal(file, 0)
-                return;
-            end
-            app.loadFile(fullfile(path, file));
-        end
-
-        function onOpenProject(app)
-            if isempty(app.SourceFile)
-                startDir = pwd;
-            else
-                startDir = fileparts(app.SourceFile);
-            end
-            [file, path] = uigetfile({'*.m', '项目入口脚本 (*.m)'}, ...
-                '选择项目入口脚本', startDir);
-            if isequal(file, 0)
-                return;
-            end
-            app.loadProject(fullfile(path, file));
-        end
-
-        function loadProjectInternal(app, entryFile)
-            %LOADPROJECTINTERNAL Scan all .m files under the entry folder.
-            session = mps.ProjectSession.load(entryFile);
-            if ~session.ok
-                uialert(app.UIFigure, session.error, '打开项目失败', ...
-                    'Icon', 'error');
-                return;
-            end
-            entryFile = session.entryFile;
-            p = session.params;
-            app.SourceFile = entryFile;
-            app.EntryFile = entryFile;
-            app.ProjectRoot = session.projectRoot;
-            app.ProjectMode = true;
-            app.ProjectStamp = session.projectStamp;
-            app.IsFunctionFile = false;
-            app.SourceLines = session.lines;
-            app.Params = p;
-            app.LastAnnotations = struct([]);
-            app.AnnotationFile = '';
-            app.SourceStamp = session.sourceStamp;
-            app.TableCtl.setSource(entryFile, app.SourceStamp);
-            app.TableCtl.RecommendedMinScore = 5;
-            app.TableCtl.resetHistory();
-            app.PresetCtl.loadFromDisk();
-            app.Results.clear();
-            app.TableCtl.clearSelection();
-            app.SourcePreview.Value = {''};
-            app.LogArea.Value = {''};
-            app.FileLabel.Text = entryFile;
-            app.FileLabel.FontColor = [0.12 0.12 0.12];
-            app.FileLabel.Tooltip = entryFile;
-            app.RescanButton.Enable = 'on';
-            app.RunButton.Enable = 'on';
-            app.SaveButton.Enable = 'off';
-            app.ExportButton.Enable = 'on';
-            app.SweepButton.Enable = 'on';
-            app.ManualButton.Enable = 'off';
-            app.EntryButton.Enable = 'on';
-            app.AnnotateTemplateButton.Enable = 'on';
-            app.ImportAnnotationButton.Enable = 'on';
-            app.ClearAnnotationButton.Enable = 'on';
-            app.LockButton.Enable = 'on';
-            app.BulkButton.Enable = 'on';
-            app.CompareButton.Enable = 'on';
-            if license('test', 'Distrib_Computing_Toolbox')
-                app.BackgroundCheck.Enable = 'on';
-            else
-                app.BackgroundCheck.Enable = 'off';
-            end
-            app.ReportButton.Enable = 'off';
-            app.FolderButton.Enable = 'off';
-            app.CloseFiguresButton.Enable = 'off';
-            app.PlotButton.Enable = 'off';
-            app.SavePlotButton.Enable = 'off';
-            app.ExportCsvButton.Enable = 'off';
-            app.refreshTable();
-            labels = app.FileFilterDrop.Items(2:end);
-            defaultLabel = mps.ProjectSession.defaultFilter(labels);
-            if ~isempty(defaultLabel)
-                app.FileFilterDrop.Value = defaultLabel;
-                app.refreshTable();
-            end
-            app.StatusLabel.Text = sprintf( ...
-                ['项目模式：入口 %s，扫描 %d 个 .m 文件，识别 %d 个参数。' ...
-                 '默认显示 %s，可切换“文件”筛选。'], ...
-                entryFile, numel(unique({p.sourceFile})), numel(p), ...
-                app.FileFilterDrop.Value);
-            drawnow;
-        end
-
-        function onChooseEntry(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            [file, path] = uigetfile({'*.m', 'MATLAB 脚本 (*.m)'}, ...
-                '选择项目入口脚本', fileparts(app.SourceFile));
-            if isequal(file, 0)
-                return;
-            end
-            app.setEntryPoint(fullfile(path, file));
-        end
-
-        function setEntryPointInternal(app, entryFile)
-            %SETENTRYPOINTINTERNAL Run entry script with edits from SourceFile.
-            entryFile = char(entryFile);
-            if ~isfile(entryFile)
-                error('mps:App:missingEntry', '入口脚本不存在：%s', entryFile);
-            end
-            app.EntryFile = entryFile;
-            app.RunButton.Enable = 'on';
-            if license('test', 'Distrib_Computing_Toolbox')
-                app.BackgroundCheck.Enable = 'on';
-            end
-            app.StatusLabel.Text = sprintf( ...
-                '项目入口：%s（运行时会复制项目到临时目录并应用参数）', ...
-                entryFile);
-        end
-
-        function onOpenInEditor(app, varargin)
-            %ONOPENINEDITOR Jump to the selected parameter's source line.
-            if ~isempty(varargin) && isstruct(varargin{1}) && ...
-                    isfield(varargin{1}, 'Indices') && ...
-                    ~isempty(varargin{1}.Indices)
-                % Only the read-only 参数/行 columns open the editor; a
-                % double-click on 新值 must keep working as cell editing.
-                indices = varargin{1}.Indices;
-                if size(indices, 2) < 2
-                    return;
-                end
-                col = indices(1, 2);
-                if ~ismember(col, [4 7])
-                    return;
-                end
-            end
-            if isempty(app.SourceFile) || isempty(app.SelectedParams)
-                uialert(app.UIFigure, '请先在参数表里选中一行。', ...
-                    '没有选中参数', 'Icon', 'warning');
-                return;
-            end
-            idx = app.SelectedParams(end);
-            lineNo = app.Params(idx).line;
-            file = app.Params(idx).sourceFile;
-            if isempty(file)
-                file = app.SourceFile;
-            end
-            try
-                matlab.desktop.editor.openAndGoToLine( ...
-                    file, max(1, lineNo));
-                app.StatusLabel.Text = sprintf( ...
-                    '已在 MATLAB 编辑器中打开：%s 第 %d 行。', file, lineNo);
-            catch
-                try
-                    edit(file);
-                    app.StatusLabel.Text = sprintf( ...
-                        '已打开源文件（未能定位到第 %d 行）。', lineNo);
-                catch err
-                    uialert(app.UIFigure, err.message, '打开失败', ...
-                        'Icon', 'error');
-                end
-            end
-        end
 
         function changed = sourceChanged(app)
             %SOURCECHANGED True when the file changed after it was scanned.
@@ -1027,82 +892,6 @@ classdef App < handle
         end
         function onToggleLock(app)
             app.TableCtl.onToggleLock();
-        end
-
-        % ---- Batch sweep ------------------------------------------
-        function onAddManualParam(app)
-            if isempty(app.SourceFile)
-                uialert(app.UIFigure, '请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
-                return;
-            end
-            if app.ProjectMode
-                uialert(app.UIFigure, ...
-                    '项目模式暂不支持手动参数；请在有明确源文件的单文件模式下使用。', ...
-                    '项目模式', 'Icon', 'warning');
-                return;
-            end
-            if app.IsFunctionFile
-                uialert(app.UIFigure, ...
-                    '函数文件不能直接运行，也不支持手动添加参数。', ...
-                    '无法添加', 'Icon', 'warning');
-                return;
-            end
-            editIdx = 0;
-            defaults = {'', '', '', ''};
-            if numel(app.SelectedParams) == 1
-                candidate = app.SelectedParams(1);
-                if isfield(app.Params(candidate), 'manual') && ...
-                        logical(app.Params(candidate).manual)
-                    editIdx = candidate;
-                    defaults = {app.Params(candidate).name, ...
-                        app.Params(candidate).newValue, ...
-                        app.Params(candidate).description, ...
-                        app.Params(candidate).unit};
-                end
-            end
-            answer = inputdlg({ ...
-                '参数名（合法 MATLAB 变量名）', ...
-                '初始值（数值表达式）', ...
-                '说明（可选）', ...
-                '单位（可选）'}, '手动参数', [1 52; 1 52; 2 52; 1 32], ...
-                defaults);
-            if isempty(answer)
-                return;
-            end
-            name = strtrim(answer{1});
-            value = strtrim(answer{2});
-            duplicate = find(strcmp({app.Params.name}, name));
-            duplicate = duplicate(duplicate ~= editIdx);
-            if ~isempty(duplicate)
-                uialert(app.UIFigure, ...
-                    sprintf('参数“%s”已经存在，请直接编辑原参数。', name), ...
-                    '参数已存在', 'Icon', 'warning');
-                return;
-            end
-            try
-                p = mps.makeManualParam(app.SourceFile, name, value, ...
-                    answer{3}, answer{4});
-            catch err
-                uialert(app.UIFigure, err.message, '保存失败', ...
-                    'Icon', 'error');
-                return;
-            end
-            app.pushUndo();
-            if editIdx > 0
-                p.use = app.Params(editIdx).use;
-                p.locked = app.Params(editIdx).locked;
-                app.Params(editIdx) = p;
-                action = '已更新';
-            else
-                app.Params(end+1) = p;
-                action = '已添加';
-            end
-            app.refreshTable();
-            mps.writeManualParams(app.SourceFile, app.Params);
-            app.StatusLabel.Text = sprintf( ...
-                '%s手动参数：%s = %s（下次打开会自动恢复）', ...
-                action, p.name, p.newValue);
         end
 
         function ok = confirmInteractiveCalls(app, actionLabel)
