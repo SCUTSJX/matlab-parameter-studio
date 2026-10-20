@@ -57,7 +57,8 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
                 copyfile(tempScript, keepScript);
             end
         catch err
-            mps.logWarning('保存扫描场景脚本', err);
+            mps.logWarning(mps.tr('保存扫描场景脚本', ...
+                'Save sweep scenario script'), err);
         end
 
         out.ok = r.ok;
@@ -95,7 +96,8 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
         try
             delete(tempScript);
         catch err
-            mps.logWarning('清理扫描场景临时脚本', err, 'Silent', true);
+            mps.logWarning(mps.tr('清理扫描场景临时脚本', ...
+                'Clean up sweep scenario temp script'), err, 'Silent', true);
         end
     end
 end
@@ -104,14 +106,14 @@ end
 function slim = loadSelected(matFile, xName, yNames)
     slim = struct();
     names = {};
-    if ~isempty(xName) && ~strcmp(xName, '(无)')
+    if ~isempty(xName) && ~mps.isNoneLabel(xName)
         names{end+1} = xName;
     end
     if ischar(yNames) || isstring(yNames)
         yNames = cellstr(yNames);
     end
     for k = 1:numel(yNames)
-        if ~strcmp(yNames{k}, '(无)')
+        if ~mps.isNoneLabel(yNames{k})
             names{end+1} = yNames{k}; %#ok<AGROW>
         end
     end
@@ -126,7 +128,8 @@ function slim = loadSelected(matFile, xName, yNames)
             end
         end
     catch err
-        mps.logWarning('加载扫描场景曲线', err);
+        mps.logWarning(mps.tr('加载扫描场景曲线', ...
+            'Load sweep scenario curves'), err);
     end
 end
 
@@ -137,14 +140,14 @@ function slim = slimWorkspace(ws, xName, yNames)
         return;
     end
     names = {};
-    if ~isempty(xName) && ~strcmp(xName, '(无)')
+    if ~isempty(xName) && ~mps.isNoneLabel(xName)
         names{end+1} = xName;
     end
     if ischar(yNames) || isstring(yNames)
         yNames = cellstr(yNames);
     end
     for k = 1:numel(yNames)
-        if ~strcmp(yNames{k}, '(无)')
+        if ~mps.isNoneLabel(yNames{k})
             names{end+1} = yNames{k}; %#ok<AGROW>
         end
     end

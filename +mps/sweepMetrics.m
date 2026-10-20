@@ -19,14 +19,14 @@ function metrics = sweepMetrics(results, xName, yNames)
     end
 
     xName = strtrim(char(xName));
-    if strcmp(xName, '(无)')
+    if mps.isNoneLabel(xName)
         xName = '';
     end
     if ischar(yNames) || isstring(yNames)
         yNames = cellstr(yNames);
     end
     yNames = yNames(~cellfun(@isempty, yNames));
-    yNames = yNames(~strcmp(yNames, '(无)'));
+    yNames = yNames(~cellfun(@mps.isNoneLabel, yNames));
 
     for k = 1:numel(results)
         r = results(k);

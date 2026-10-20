@@ -31,7 +31,8 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
     end
 
     if ~isfile(sourceFile)
-        error('mps:applyEdits:fileNotFound', '找不到文件：%s', sourceFile);
+        error('mps:applyEdits:fileNotFound', mps.tr( ...
+            '找不到文件：%s', 'File not found: %s'), sourceFile);
     end
 
     raw = fileread(sourceFile);
@@ -57,14 +58,16 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
         newText = strtrim(p.newValue);
         if strcmp(oldText, newText), continue; end
         if isempty(newText)
-            warning('mps:applyEdits:emptyValue', ...
-                '参数 %s 的新值为空，已跳过。', p.name);
+            warning('mps:applyEdits:emptyValue', mps.tr( ...
+                '参数 %s 的新值为空，已跳过。', ...
+                'Parameter %s has an empty new value; skipped.'), p.name);
             continue;
         end
         [okValue, ~] = mps.validateValue(newText);
         if ~okValue
-            warning('mps:applyEdits:badValue', ...
+            warning('mps:applyEdits:badValue', mps.tr( ...
                 '参数 %s 的新值不是安全的数值表达式，已跳过：%s', ...
+                'New value for parameter %s is not a safe numeric expression; skipped: %s'), ...
                 p.name, newText);
             continue;
         end
@@ -114,8 +117,10 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
             s = e.start;
             t = e.end;
             if s < 1 || t > numel(line) || s > t
-                warning('mps:applyEdits:badRange', ...
-                    '参数 %s 的位置超出范围，已跳过。', e.name);
+                warning('mps:applyEdits:badRange', mps.tr( ...
+                    '参数 %s 的位置超出范围，已跳过。', ...
+                    'Position for parameter %s is out of range; skipped.'), ...
+                    e.name);
                 continue;
             end
             lines{e.line} = [line(1:s-1), e.text, line(t+1:end)];
@@ -153,7 +158,8 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
         end
         fid = fopen(outputPath, 'w', 'n', 'UTF-8');
         if fid < 0
-            error('mps:applyEdits:cannotWrite', '无法写入：%s', outputPath);
+            error('mps:applyEdits:cannotWrite', mps.tr( ...
+                '无法写入：%s', 'Cannot write: %s'), outputPath);
         end
         cleaner = onCleanup(@() fclose(fid));
         fprintf(fid, '%s', outText);

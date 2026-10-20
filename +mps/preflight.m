@@ -46,25 +46,31 @@ function out = preflight(varargin)
     diary off;
     diary(logFile);
     diaryCleaner = onCleanup(@() diary('off')); %#ok<NASGU>
-    fprintf('MATLAB Parameter Studio preflight\n');
-    fprintf('Time: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
-    fprintf('Root: <repo>\n\n');
+    fprintf(mps.tr('MATLAB Parameter Studio 预检\n', ...
+        'MATLAB Parameter Studio preflight\n'));
+    fprintf(mps.tr('时间：%s\n', 'Time: %s\n'), ...
+        datestr(now, 'yyyy-mm-dd HH:MM:SS'));
+    fprintf(mps.tr('根目录：<repo>\n\n', 'Root: <repo>\n\n'));
 
     try
         out.environment = mps.checkEnvironment(root);
         fprintf('MATLAB %s (%s)\n', out.environment.matlabVersion, ...
             out.environment.release);
         fprintf('Parameter Studio %s\n', out.environment.mpsVersion);
-        fprintf('PCT: %s\n', ternary(out.environment.hasPCT, 'yes', 'no'));
+        fprintf('PCT: %s\n', ternary(out.environment.hasPCT, ...
+            mps.tr('是', 'yes'), mps.tr('否', 'no')));
         for k = 1:numel(out.environment.messages)
-            fprintf('NOTE: %s\n', out.environment.messages{k});
+            fprintf(mps.tr('提示：%s\n', 'NOTE: %s\n'), ...
+                out.environment.messages{k});
         end
         fprintf('\n');
         if ~out.environment.ok
-            out.error = '环境检查未通过。';
+            out.error = mps.tr('环境检查未通过。', ...
+                'Environment check failed.');
         else
             if full
-                fprintf('Running full test suite...\n\n');
+                fprintf(mps.tr('正在运行完整测试套件...\n\n', ...
+                    'Running full test suite...\n\n'));
                 addpath(fullfile(root, 'tests'));
                 try
                     run_tests;
@@ -75,21 +81,25 @@ function out = preflight(varargin)
                     out.testsPassed = false;
                     out.error = getReport(err, 'extended', ...
                         'hyperlinks', 'off');
-                    fprintf('\nTEST FAILURE:\n%s\n', out.error);
+                    fprintf(mps.tr('\n测试失败：\n%s\n', ...
+                        '\nTEST FAILURE:\n%s\n'), out.error);
                 end
             else
-                fprintf('Environment-only check (Full=false).\n');
+                fprintf(mps.tr('仅环境检查（Full=false）。\n', ...
+                    'Environment-only check (Full=false).\n'));
             end
             out.ok = out.environment.ok && ...
                 (~full || out.testsPassed);
         end
     catch err
         out.error = getReport(err, 'extended', 'hyperlinks', 'off');
-        fprintf('\nPREFLIGHT FAILURE:\n%s\n', out.error);
+        fprintf(mps.tr('\n预检失败：\n%s\n', ...
+            '\nPREFLIGHT FAILURE:\n%s\n'), out.error);
     end
 
-    fprintf('\nPreflight result: %s\n', ternary(out.ok, 'PASS', 'FAIL'));
-    fprintf('Log: %s\n', logFile);
+    fprintf(mps.tr('\n预检结果：%s\n', '\nPreflight result: %s\n'), ...
+        ternary(out.ok, mps.tr('通过', 'PASS'), mps.tr('失败', 'FAIL')));
+    fprintf(mps.tr('日志：%s\n', 'Log: %s\n'), logFile);
     diary off;
     clear diaryCleaner;
 
@@ -97,8 +107,9 @@ function out = preflight(varargin)
     cleanupPreflightLogs(logDir, keepLogs, logFile);
 
     if ~out.ok
-        warning('mps:preflight:failed', ...
-            'Preflight failed. See log: %s', logFile);
+        warning('mps:preflight:failed', mps.tr( ...
+            '预检失败。请查看日志：%s', ...
+            'Preflight failed. See log: %s'), logFile);
     end
 end
 
@@ -151,7 +162,8 @@ function redactLogFile(logFile, root, tempDir)
         fwrite(fid, uint8(text), 'uint8');
         fclose(fid);
     catch err
-        mps.logWarning('脱敏 preflight 日志', err, 'Silent', true);
+        mps.logWarning(mps.tr('脱敏 preflight 日志', ...
+            'Redact preflight log'), err, 'Silent', true);
     end
 end
 
@@ -180,7 +192,8 @@ function cleanupPreflightLogs(logDir, keepLogs, currentFile)
         try
             delete(target);
         catch err
-            mps.logWarning(sprintf('清理旧 preflight 日志 %s', others(k).name), ...
+            mps.logWarning(mps.tr('清理旧 preflight 日志 %s', ...
+                'Clean old preflight log %s', others(k).name), ...
                 err, 'Silent', true);
         end
     end

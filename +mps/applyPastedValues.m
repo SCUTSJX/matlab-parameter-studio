@@ -17,7 +17,8 @@ function [params, stats] = applyPastedValues(params, indices, values)
     indices = double(indices(:)');
     if numel(values) ~= numel(indices)
         error('mps:applyPastedValues:countMismatch', ...
-            '剪贴板有 %d 个值，但目标有 %d 行。', ...
+            mps.tr('剪贴板有 %d 个值，但目标有 %d 行。', ...
+            'The clipboard has %d values but the target has %d rows.'), ...
             numel(values), numel(indices));
     end
 
@@ -31,7 +32,8 @@ function [params, stats] = applyPastedValues(params, indices, values)
         if ~ok || isempty(value)
             stats.skippedInvalid = stats.skippedInvalid + 1;
             error('mps:applyPastedValues:invalidValue', ...
-                '第 %d 行的值无效：%s', j, value);
+                mps.tr('第 %d 行的值无效：%s', ...
+                'Invalid value on row %d: %s'), j, value);
         end
         if isfield(params(idx), 'locked') && logical(params(idx).locked)
             stats.skippedLocked = stats.skippedLocked + 1;

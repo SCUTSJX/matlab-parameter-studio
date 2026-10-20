@@ -8,7 +8,9 @@ function params = scanProject(root, varargin)
 %   edits to the corresponding shadow copies.
 
     if nargin < 1 || isempty(root) || ~isfolder(root)
-        error('mps:scanProject:missingRoot', '项目目录不存在：%s', char(root));
+        error('mps:scanProject:missingRoot', mps.tr( ...
+            '项目目录不存在：%s', 'Project folder not found: %s'), ...
+            char(root));
     end
     excluded = {'运行结果', 'parameter_studio_runs', '绘图数据缓存', ...
         '.git', '__pycache__', '.mps_cache'};
@@ -29,8 +31,8 @@ function params = scanProject(root, varargin)
         try
             one = mps.scan(paths{k});
         catch err
-            mps.logWarning(sprintf('扫描项目文件 %s', paths{k}), err, ...
-                'Silent', true);
+            mps.logWarning(mps.tr('扫描项目文件 %s', ...
+                'Scan project file %s', paths{k}), err, 'Silent', true);
             continue;
         end
         if isempty(params)

@@ -28,7 +28,8 @@ function syncProjectTree(sourceRoot, targetRoot)
             try
                 delete(target);
             catch err
-                mps.logWarning(sprintf('删除影子文件 %s', stale{k}), err);
+                mps.logWarning(mps.tr('删除影子文件 %s', ...
+                    'Delete shadow file %s', stale{k}), err);
             end
         end
     end
@@ -78,7 +79,8 @@ function files = copyLevel(source, target, relBase, excluded, manifestName, file
             try
                 copyfile(src, dst);
             catch err
-                mps.logWarning(sprintf('同步项目文件 %s', rel), err);
+                mps.logWarning(mps.tr('同步项目文件 %s', ...
+                    'Sync project file %s', rel), err);
                 files{end+1} = rel; %#ok<AGROW>
                 continue;
             end
@@ -99,7 +101,8 @@ function files = readManifest(path)
         files = files(~cellfun(@isempty, files));
         files = cellfun(@strtrim, files, 'UniformOutput', false);
     catch err
-        mps.logWarning('读取影子目录清单', err);
+        mps.logWarning(mps.tr('读取影子目录清单', ...
+            'Read shadow folder manifest'), err);
         files = {};
     end
 end
@@ -109,15 +112,16 @@ function writeManifest(path, files)
     try
         fid = fopen(path, 'w', 'n', 'UTF-8');
         if fid < 0
-            error('mps:syncProjectTree:manifest', ...
-                '无法写入清单：%s', path);
+            error('mps:syncProjectTree:manifest', mps.tr( ...
+                '无法写入清单：%s', 'Cannot write manifest: %s'), path);
         end
         cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
         for k = 1:numel(files)
             fprintf(fid, '%s\n', files{k});
         end
     catch err
-        mps.logWarning('写入影子目录清单', err);
+        mps.logWarning(mps.tr('写入影子目录清单', ...
+            'Write shadow folder manifest'), err);
     end
 end
 

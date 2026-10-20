@@ -17,14 +17,17 @@ function anns = readAnnotations(jsonPath)
 %   Returned struct array fields: id, name, line, description, unit.
 
     if ~isfile(jsonPath)
-        error('mps:readAnnotations:fileNotFound', '找不到注释文件：%s', jsonPath);
+        error('mps:readAnnotations:fileNotFound', ...
+            mps.tr('找不到注释文件：%s', ...
+            'Annotation file not found: %s'), jsonPath);
     end
     raw = fileread(jsonPath);
     try
         data = jsondecode(raw);
     catch err
         error('mps:readAnnotations:badJson', ...
-            'JSON 解析失败：%s\n%s', err.message, jsonPath);
+            mps.tr('JSON 解析失败：%s\n%s', ...
+            'JSON parse failed: %s\n%s'), err.message, jsonPath);
     end
 
     anns = emptyAnnotations();

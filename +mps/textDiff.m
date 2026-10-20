@@ -26,7 +26,7 @@ function lines = textDiff(oldText, newText, context)
     end
 
     if ~any(changed)
-        lines = {'没有检测到改动。'};
+        lines = {mps.tr('没有检测到改动。', 'No changes detected.')};
         return;
     end
 
@@ -60,7 +60,8 @@ function lines = textDiff(oldText, newText, context)
         end
         lastShown = k;
         if numel(lines) >= 600
-            lines{end+1} = '...（预览已截断）'; %#ok<AGROW>
+            lines{end+1} = mps.tr('...（预览已截断）', ...
+                '... (preview truncated)'); %#ok<AGROW>
             break;
         end
     end

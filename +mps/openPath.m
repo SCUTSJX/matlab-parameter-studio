@@ -7,7 +7,8 @@ function openPath(target)
 
     target = char(target);
     if ~isfile(target) && ~isfolder(target)
-        error('mps:openPath:notFound', '路径不存在：%s', target);
+        error('mps:openPath:notFound', ...
+            mps.tr('路径不存在：%s', 'Path does not exist: %s'), target);
     end
 
     if ispc

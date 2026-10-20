@@ -36,6 +36,7 @@ function run_tests()
     test_project;
     test_parallel;
     test_app;
+    test_english;
     test_cleanup;
 
     fprintf('ALL TESTS PASSED\n');

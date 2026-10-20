@@ -23,7 +23,8 @@ function shadowRoot = prepareShadowProject(projectRoot)
             try
                 rmdir(shadowRoot, 's');
             catch err
-                mps.logWarning('重建项目影子目录', err);
+                mps.logWarning(mps.tr('重建项目影子目录', ...
+                    'Rebuild project shadow folder'), err);
             end
         end
         mkdir(shadowRoot);
@@ -54,6 +55,7 @@ function touchFolder(path)
             fclose(fid);
         end
     catch err
-        mps.logWarning('更新影子目录时间戳', err, 'Silent', true);
+        mps.logWarning(mps.tr('更新影子目录时间戳', ...
+            'Update shadow folder timestamp'), err, 'Silent', true);
     end
 end

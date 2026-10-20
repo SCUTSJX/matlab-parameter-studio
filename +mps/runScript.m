@@ -139,7 +139,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 saveas(f, pngPath);
                 wrote = true;
             catch
-                mps.logWarning('导出运行图窗 PNG', firstErr);
+                mps.logWarning(mps.tr('导出运行图窗 PNG', ...
+                    'Export the run figure PNG'), firstErr);
             end
         end
         figFile = '';
@@ -149,7 +150,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 savefig(f, figFile);
             catch err
                 figFile = '';
-                mps.logWarning('保存运行图窗 .fig', err);
+                mps.logWarning(mps.tr('保存运行图窗 .fig', ...
+                    'Save the run figure .fig'), err);
             end
         end
         if wrote
@@ -160,7 +162,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 % 读不到名称时使用默认标题
             end
             if isempty(title)
-                title = sprintf('图 %d', k);
+                title = mps.tr('图 %d', 'Figure %d', k);
             end
             result.figures(end+1) = struct('path', pngPath, ...
                 'title', title, 'figFile', figFile);
@@ -181,7 +183,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 save(matFile, '-struct', 'wsData', '-v7.3');
                 result.matFile = matFile;
             catch
-                mps.logWarning('保存运行工作区', firstErr);
+                mps.logWarning(mps.tr('保存运行工作区', ...
+                    'Save the run workspace'), firstErr);
             end
         end
     end
@@ -190,7 +193,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
         try
             result.log = fileread(logFile);
         catch err
-            mps.logWarning('读取运行日志', err);
+            mps.logWarning(mps.tr('读取运行日志', ...
+                'Read the run log'), err);
         end
     end
 

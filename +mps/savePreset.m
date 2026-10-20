@@ -9,7 +9,8 @@ function presets = savePreset(sourceFile, name, params)
 
     name = strtrim(char(name));
     if isempty(name)
-        error('mps:savePreset:emptyName', '参数集名称不能为空。');
+        error('mps:savePreset:emptyName', ...
+            mps.tr('参数集名称不能为空。', 'Preset name cannot be empty.'));
     end
 
     presets = mps.readPresets(sourceFile);

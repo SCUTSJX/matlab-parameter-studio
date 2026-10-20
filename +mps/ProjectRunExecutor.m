@@ -40,11 +40,14 @@ classdef ProjectRunExecutor < handle
         function out = run(obj)
             if isempty(obj.SourceFile) || isempty(obj.EntryFile)
                 error('mps:ProjectRunExecutor:noFiles', ...
-                    '参数源和入口脚本都必须指定。');
+                    mps.tr('参数源和入口脚本都必须指定。', ...
+                        ['Both the parameter source and the entry ' ...
+                         'script must be specified.']));
             end
             if isempty(obj.EntryFile) || ~isfile(obj.EntryFile)
                 error('mps:ProjectRunExecutor:missingEntry', ...
-                    '入口脚本不存在：%s', obj.EntryFile);
+                    mps.tr('入口脚本不存在：%s', ...
+                        'Entry script not found: %s', obj.EntryFile));
             end
 
             projectRoot = fileparts(obj.EntryFile);
@@ -54,7 +57,8 @@ classdef ProjectRunExecutor < handle
             end
 
             if obj.UseShadowCache
-                obj.Progress('同步项目影子目录...');
+                obj.Progress(mps.tr('同步项目影子目录...', ...
+                    'Syncing the project shadow folder...'));
                 shadowRoot = mps.prepareShadowProject(projectRoot);
                 cleaner = onCleanup(@() []); %#ok<NASGU>
             else
@@ -62,7 +66,8 @@ classdef ProjectRunExecutor < handle
                     'mps_project_%s_%d', datestr(now, 'yyyymmdd_HHMMSSFFF'), ...
                     randi(1e9)));
                 cleaner = onCleanup(@() cleanupTree(shadowRoot)); %#ok<NASGU>
-                obj.Progress('复制项目到临时目录...');
+                obj.Progress(mps.tr('复制项目到临时目录...', ...
+                    'Copying the project to a temporary folder...'));
                 mps.copyProjectTree(projectRoot, shadowRoot);
             end
             if obj.ResetShadowResults
@@ -71,7 +76,8 @@ classdef ProjectRunExecutor < handle
                     try
                         rmdir(shadowResults, 's');
                     catch err
-                        mps.logWarning('清理影子运行结果', err);
+                        mps.logWarning(mps.tr('清理影子运行结果', ...
+                            'Clean the shadow run results'), err);
                     end
                 end
             end
@@ -79,9 +85,12 @@ classdef ProjectRunExecutor < handle
             if any(arrayfun(@(p) isfield(p, 'manual') && logical(p.manual), ...
                     obj.Params))
                 error('mps:ProjectRunExecutor:manual', ...
-                    '项目模式暂不支持手动参数。');
+                    mps.tr('项目模式暂不支持手动参数。', ...
+                        ['Project mode does not support manual ' ...
+                         'parameters yet.']));
             end
-            obj.Progress('写入调参后的配置...');
+            obj.Progress(mps.tr('写入调参后的配置...', ...
+                'Writing the tuned configuration...'));
             files = unique({obj.Params.sourceFile});
             for k = 1:numel(files)
                 file = files{k};
@@ -91,12 +100,16 @@ classdef ProjectRunExecutor < handle
                 rel = relativeTo(projectRoot, file);
                 if isempty(rel)
                     error('mps:ProjectRunExecutor:outsideProject', ...
-                        '参数文件不在入口脚本所在项目内：%s', file);
+                        mps.tr('参数文件不在入口脚本所在项目内：%s', ...
+                            ['Parameter file is outside the project of ' ...
+                             'the entry script: %s'], file));
                 end
                 shadowFile = fullfile(shadowRoot, rel);
                 if ~isfile(shadowFile)
                     error('mps:ProjectRunExecutor:missingSource', ...
-                        '临时项目里找不到参数文件：%s', rel);
+                        mps.tr('临时项目里找不到参数文件：%s', ...
+                            ['Parameter file not found in the ' ...
+                             'temporary project: %s'], rel));
                 end
                 subset = obj.Params(strcmp({obj.Params.sourceFile}, file));
                 mps.applyEdits(file, subset, shadowFile, ...
@@ -108,7 +121,8 @@ classdef ProjectRunExecutor < handle
             outDir = obj.makeOutputDir();
             keepScript = fullfile(outDir, 'run_script.m');
 
-            obj.Progress('运行项目入口...');
+            obj.Progress(mps.tr('运行项目入口...', ...
+                'Running the project entry...'));
             oldVis = get(groot, 'defaultFigureVisible');
             set(groot, 'defaultFigureVisible', 'off');
             figCleaner = onCleanup(@() set(groot, ...
@@ -140,7 +154,8 @@ classdef ProjectRunExecutor < handle
                     r.scriptPath = keepScript;
                 end
             catch err
-                mps.logWarning('保存项目运行脚本副本', err);
+                mps.logWarning(mps.tr('保存项目运行脚本副本', ...
+                    'Save a copy of the project run script'), err);
             end
 
             % Preserve the project's own result folder (metrics.csv,
@@ -151,14 +166,16 @@ classdef ProjectRunExecutor < handle
                     copyProjectTree(shadowResults, ...
                         fullfile(outDir, 'project_results'));
                 catch err
-                    mps.logWarning('复制项目运行结果', err);
+                    mps.logWarning(mps.tr('复制项目运行结果', ...
+                        'Copy the project run results'), err);
                 end
             end
 
             r.error = replaceShadowRoot(r.error, shadowRoot, projectRoot);
             r.log = replaceShadowRoot(r.log, shadowRoot, projectRoot);
 
-            obj.Progress('生成 HTML 报告...');
+            obj.Progress(mps.tr('生成 HTML 报告...', ...
+                'Writing the HTML report...'));
             reportPath = mps.writeReport(outDir, ...
                 obj.EntryFile, obj.Params, r);
             out = struct('run', r, 'outDir', outDir, ...
@@ -213,7 +230,7 @@ end
 function slim = loadSelected(matFile, names)
     slim = struct();
     names = names(~cellfun(@isempty, names));
-    names = names(~strcmp(names, '(无)'));
+    names = names(~cellfun(@mps.isNoneLabel, names));
     if isempty(names), return; end
     try
         S = load(matFile, names{:});
@@ -225,7 +242,8 @@ function slim = loadSelected(matFile, names)
             end
         end
     catch err
-        mps.logWarning('加载项目曲线变量', err);
+        mps.logWarning(mps.tr('加载项目曲线变量', ...
+            'Load project curve variables'), err);
     end
 end
 
@@ -237,7 +255,7 @@ function slim = slimWorkspaceData(ws, names)
     end
     for k = 1:numel(names)
         name = char(names{k});
-        if isempty(name) || strcmp(name, '(无)')
+        if mps.isNoneLabel(name)
             continue;
         end
         if isfield(ws, name)
@@ -266,7 +284,8 @@ function writeWrapper(path, relativeEntry)
     fid = fopen(path, 'w', 'n', 'UTF-8');
     if fid < 0
         error('mps:ProjectRunExecutor:wrapper', ...
-            '无法写入临时入口脚本：%s', path);
+            mps.tr('无法写入临时入口脚本：%s', ...
+                'Cannot write the temporary entry script: %s', path));
     end
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
     fprintf(fid, 'mpsProjectOldPath = path;\n');
@@ -295,7 +314,9 @@ function cleanupTree(path)
         try
             rmdir(path, 's');
         catch err
-            mps.logWarning('清理临时项目目录', err, 'Silent', true);
+            mps.logWarning(mps.tr('清理临时项目目录', ...
+                'Clean the temporary project folder'), err, ...
+                'Silent', true);
         end
     end
 end

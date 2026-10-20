@@ -36,7 +36,8 @@ function removed = cleanupShadowProjects(maxAgeDays)
                 rmdir(fullfile(item.folder, item.name), 's');
                 removed = removed + 1;
             catch err
-                mps.logWarning(sprintf('清理影子目录 %s', item.name), err);
+                mps.logWarning(mps.tr('清理影子目录 %s', ...
+                    'Clean shadow folder %s', item.name), err);
             end
         end
     end

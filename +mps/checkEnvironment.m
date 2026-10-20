@@ -21,11 +21,13 @@ function info = checkEnvironment(root)
     info.messages = {};
 
     if verLessThan('matlab', '9.15')
-        info.messages{end+1} = ...
-            'MATLAB R2023b or newer is required.';
+        info.messages{end+1} = mps.tr( ...
+            '需要 MATLAB R2023b 或更高版本。', ...
+            'MATLAB R2023b or newer is required.');
     end
     if ~info.demoExists
-        info.messages{end+1} = 'Demo script is missing.';
+        info.messages{end+1} = mps.tr( ...
+            '缺少示例脚本。', 'Demo script is missing.');
     end
     try
         probe = [tempname, '.mps-probe'];
@@ -39,7 +41,8 @@ function info = checkEnvironment(root)
         % 探测失败按“临时目录不可写”处理，下面统一提示
     end
     if ~info.tempWritable
-        info.messages{end+1} = 'Temporary directory is not writable.';
+        info.messages{end+1} = mps.tr( ...
+            '临时目录不可写。', 'Temporary directory is not writable.');
     end
     required = {'uifigure', 'uipanel', 'uitable', 'exportgraphics', ...
         'jsonencode', 'jsondecode', 'uiprogressdlg'};
@@ -51,12 +54,13 @@ function info = checkEnvironment(root)
         end
     end
     if ~isempty(info.missing)
-        info.messages{end+1} = ['Missing functions: ' ...
+        info.messages{end+1} = [mps.tr('缺少函数：', 'Missing functions: ') ...
             strjoin(info.missing, ', ')];
     end
     if ~info.hasPCT
-        info.messages{end+1} = ...
-            'Parallel Computing Toolbox not found; parallel sweep and background runs are disabled.';
+        info.messages{end+1} = mps.tr( ...
+            '未找到 Parallel Computing Toolbox；并行扫描和后台运行已禁用。', ...
+            'Parallel Computing Toolbox not found; parallel sweep and background runs are disabled.');
     end
     info.ok = info.demoExists && info.tempWritable && ...
         isempty(info.missing) && ~verLessThan('matlab', '9.15');

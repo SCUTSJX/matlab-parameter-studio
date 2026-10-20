@@ -14,7 +14,7 @@ function params = readManualParams(sourceFile)
             raw = [raw{:}];
         end
     catch err
-        mps.logWarning('读取手动参数', err);
+        mps.logWarning(mps.tr('读取手动参数', 'Read manual parameters'), err);
         return;
     end
     if ~isstruct(raw)
@@ -34,7 +34,8 @@ function params = readManualParams(sourceFile)
             p = mps.makeManualParam(sourceFile, name, value, ...
                 fieldChar(r, 'description'), fieldChar(r, 'unit'));
         catch err
-            mps.logWarning(sprintf('跳过无效手动参数 %s', name), err);
+            mps.logWarning(mps.tr('跳过无效手动参数 %s', ...
+                'Skipping invalid manual parameter %s', name), err);
             continue;
         end
         if isfield(r, 'use') && (islogical(r.use) || isnumeric(r.use))

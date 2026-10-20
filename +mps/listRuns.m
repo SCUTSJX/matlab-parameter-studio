@@ -103,7 +103,8 @@ function runs = listRuns(root, varargin)
             if ~isempty(failures)
                 r.ok = double(failures == 0);
                 if failures > 0
-                    r.error = sprintf('%d 组运行失败', failures);
+                    r.error = mps.tr('%d 组运行失败', ...
+                        '%d scenarios failed', failures);
                 end
             elseif isfield(meta, 'ok')
                 r.ok = double(logical(meta.ok));
@@ -160,7 +161,8 @@ function data = readJson(path)
             data = value;
         end
     catch err
-        mps.logWarning(sprintf('读取运行记录 %s', path), err);
+        mps.logWarning(mps.tr('读取运行记录 %s', ...
+            'Read run record %s', path), err);
     end
 end
 
@@ -205,7 +207,7 @@ function [summary, changed] = summarizeParams(path)
         end
     end
     if changed == 0
-        summary = '未改参数';
+        summary = mps.tr('未改参数', 'No parameter changes');
     else
         if changed > numel(parts)
             parts{end+1} = sprintf('+%d', changed - numel(parts));
@@ -217,7 +219,7 @@ end
 % -------------------------------------------------------------------------
 function [summary, count, failures, elapsed, figures] = ...
         summarizeSweep(sweepPath, runPath)
-    summary = '批量扫描';
+    summary = mps.tr('批量扫描', 'Batch sweep');
     count = NaN;
     failures = [];
     elapsed = NaN;
@@ -269,12 +271,15 @@ function [summary, count, failures, elapsed, figures] = ...
     end
 
     if isempty(names)
-        summary = sprintf('批量扫描 · %d 组', count);
+        summary = mps.tr('批量扫描 · %d 组', ...
+            'Batch sweep · %d scenarios', count);
     else
-        summary = sprintf('%s · %d 组', strjoin(names, ', '), count);
+        summary = mps.tr('%s · %d 组', '%s · %d scenarios', ...
+            strjoin(names, ', '), count);
     end
     if ~isempty(failures) && failures > 0
-        summary = sprintf('%s（%d 组失败）', summary, failures);
+        summary = mps.tr('%s（%d 组失败）', '%s (%d failed)', ...
+            summary, failures);
     end
 end
 
@@ -289,8 +294,8 @@ function bytes = folderBytes(folder)
             end
         end
     catch err
-        mps.logWarning(sprintf('统计运行目录大小 %s', folder), err, ...
-            'Silent', true);
+        mps.logWarning(mps.tr('统计运行目录大小 %s', ...
+            'Measure size of run folder %s', folder), err, 'Silent', true);
     end
 end
 
@@ -330,7 +335,8 @@ function ok = statusFromReport(reportPath)
             ok = 1;
         end
     catch err
-        mps.logWarning('解析运行报告状态', err);
+        mps.logWarning(mps.tr('解析运行报告状态', ...
+            'Parse run report status'), err);
     end
 end
 

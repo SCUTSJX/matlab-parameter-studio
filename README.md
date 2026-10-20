@@ -24,7 +24,7 @@
 
 It is built for the workflow where an AI or a colleague generates a simulation script, and you then need to tune masses, stiffnesses, gains, time steps, or controller constants without editing code line by line — and without sending the same request back to a chat model.
 
-> **UI language:** the application is currently Chinese-first. This English README documents the workflow; the [简体中文 README](README.zh-CN.md) contains the full UI walkthrough. Button names below describe the action; the running app shows the equivalent Chinese labels.
+> **UI language:** the standard launcher opens the Chinese UI. Use `MatlabParameterStudioEnglish` (or `MatlabParameterStudio('Language','en')`) for the English UI. Button names below describe the action; both UI languages use the same workflow.
 
 ## Quick start
 
@@ -34,7 +34,8 @@ It is built for the workflow where an AI or a colleague generates a simulation s
 cd('path/to/matlab-parameter-studio')
 install                 % current MATLAB session
 % install('Save')       % persist on the MATLAB path
-MatlabParameterStudio
+MatlabParameterStudioEnglish
+% or: MatlabParameterStudio('Language', 'en')
 ```
 
 Then:
@@ -74,6 +75,7 @@ parameter_studio_runs/<timestamp>/
 | **Project mode** | Scan a folder of `.m` files, edit parameters across files, run an entry script in a temporary shadow copy, and sweep multiple files together. |
 | **Large workspaces** | Per-variable and total memory budgets, lazy workspace loading, summary-only tables and optional PNG-only figure output. |
 | **Non-blocking runs** | Optional background execution and parallel sweeps on Parallel Computing Toolbox workers, with progress, cancellation and timeouts. |
+| **Bilingual UI** | Chinese and English UI share the same implementation. Launch `MatlabParameterStudioEnglish` or pass `'Language','en'`. |
 
 ### Annotations
 

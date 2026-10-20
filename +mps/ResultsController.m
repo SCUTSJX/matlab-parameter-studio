@@ -60,21 +60,26 @@ classdef ResultsController < handle
             obj.FigurePaths = {};
             obj.CustomPlotPath = '';
 
-            obj.FigureDrop.Items = {'(无图)'};
-            obj.FigureDrop.Value = '(无图)';
+            noFigure = mps.tr('(无图)', '(No figures)');
+            noneLabel = mps.tr('(无)', '(None)');
+            obj.FigureDrop.Items = {noFigure};
+            obj.FigureDrop.Value = noFigure;
             obj.FigureImage.ImageSource = '';
             obj.FigureImage.Visible = 'off';
             obj.WorkspaceTable.Data = cell(0, 6);
-            obj.XDrop.Items = {'(无)'};
-            obj.XDrop.Value = '(无)';
-            obj.YList.Items = {'(无)'};
-            obj.YList.Value = {'(无)'};
+            obj.XDrop.Items = {noneLabel};
+            obj.XDrop.Value = noneLabel;
+            obj.YList.Items = {noneLabel};
+            obj.YList.Value = {noneLabel};
             obj.PlotButton.Enable = 'off';
             obj.SavePlotButton.Enable = 'off';
             obj.ExportCsvButton.Enable = 'off';
-            obj.PlotStatus.Text = '运行脚本后，可选择工作区变量绘图。';
+            obj.PlotStatus.Text = mps.tr( ...
+                '运行脚本后，可选择工作区变量绘图。', ...
+                'Run a script to plot workspace variables here.');
             cla(obj.UIAxes);
-            title(obj.UIAxes, '运行后在这里绘图');
+            title(obj.UIAxes, mps.tr('运行后在这里绘图', ...
+                'Plots appear here after a run'));
         end
 
         function refreshAll(obj)
@@ -86,8 +91,9 @@ classdef ResultsController < handle
         function refreshResults(obj)
             r = obj.LastRun;
             if ~isfield(r, 'figures') || isempty(r.figures)
-                obj.FigureDrop.Items = {'(无图)'};
-                obj.FigureDrop.Value = '(无图)';
+                noFigure = mps.tr('(无图)', '(No figures)');
+                obj.FigureDrop.Items = {noFigure};
+                obj.FigureDrop.Value = noFigure;
                 obj.FigurePaths = {};
                 obj.FigureImage.ImageSource = '';
                 obj.FigureImage.Visible = 'off';
@@ -98,7 +104,7 @@ classdef ResultsController < handle
             for k = 1:numel(r.figures)
                 title = r.figures(k).title;
                 if isempty(title)
-                    title = sprintf('图 %d', k);
+                    title = mps.tr('图 %d', 'Figure %d', k);
                 end
                 items{k} = sprintf('%d. %s', k, title);
                 obj.FigurePaths{k} = r.figures(k).path;
@@ -146,6 +152,7 @@ classdef ResultsController < handle
         end
 
         function refreshPlotVariables(obj)
+            noneLabel = mps.tr('(无)', '(None)');
             names = {};
             matFile = obj.workspaceMatFile();
             if ~isempty(matFile) && isfile(matFile)
@@ -179,14 +186,15 @@ classdef ResultsController < handle
             end
             names = sort(names);
             if isempty(names)
-                obj.XDrop.Items = {'(无)'};
-                obj.XDrop.Value = '(无)';
-                obj.YList.Items = {'(无)'};
-                obj.YList.Value = {'(无)'};
+                obj.XDrop.Items = {noneLabel};
+                obj.XDrop.Value = noneLabel;
+                obj.YList.Items = {noneLabel};
+                obj.YList.Value = {noneLabel};
                 obj.PlotButton.Enable = 'off';
                 obj.SavePlotButton.Enable = 'off';
                 obj.ExportCsvButton.Enable = 'off';
-                obj.PlotStatus.Text = '没有可绘制的数值向量。';
+                obj.PlotStatus.Text = mps.tr('没有可绘制的数值向量。', ...
+                    'No numeric vectors are available to plot.');
                 return;
             end
             obj.XDrop.Items = names;
@@ -208,7 +216,8 @@ classdef ResultsController < handle
             if numel(txt) > 100
                 txt = [txt(1:97), '...'];
             end
-            obj.PlotStatus.Text = ['可绘制变量：', txt];
+            obj.PlotStatus.Text = [ ...
+                mps.tr('可绘制变量：', 'Plottable variables: '), txt];
         end
 
         function plotWorkspace(obj, xName, yNames)
@@ -230,8 +239,9 @@ classdef ResultsController < handle
         end
 
         function onPlot(obj)
+            noneLabel = mps.tr('(无)', '(None)');
             xName = obj.XDrop.Value;
-            if isempty(xName) || strcmp(xName, '(无)')
+            if isempty(xName) || strcmp(xName, noneLabel)
                 return;
             end
             yNames = obj.YList.Value;
@@ -239,7 +249,7 @@ classdef ResultsController < handle
                 yNames = {yNames};
             end
             if isempty(yNames) || (numel(yNames) == 1 && ...
-                    strcmp(yNames{1}, '(无)'))
+                    strcmp(yNames{1}, noneLabel))
                 return;
             end
             S = obj.loadVariables([{xName}, yNames]);
@@ -264,19 +274,22 @@ classdef ResultsController < handle
             hold(obj.UIAxes, 'off');
             grid(obj.UIAxes, 'on');
             xlabel(obj.UIAxes, xName, 'Interpreter', 'none');
-            ylabel(obj.UIAxes, '值');
+            ylabel(obj.UIAxes, mps.tr('值', 'Value'));
             if ~isempty(leg)
                 legend(obj.UIAxes, leg, 'Interpreter', 'none', ...
                     'Location', 'best');
             end
-            title(obj.UIAxes, '工作区变量');
-            obj.PlotStatus.Text = sprintf('已绘制 %d 条曲线。', numel(leg));
+            title(obj.UIAxes, mps.tr('工作区变量', 'Workspace variables'));
+            obj.PlotStatus.Text = mps.tr('已绘制 %d 条曲线。', ...
+                'Plotted %d curves.', numel(leg));
             drawnow;
         end
 
         function savePlot(obj, sourceFile, params)
             if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
-                obj.alert('请先运行一次脚本。', '没有输出目录', ...
+                obj.alert(mps.tr('请先运行一次脚本。', ...
+                    'Run a script first.'), ...
+                    mps.tr('没有输出目录', 'No output folder'), ...
                     'Icon', 'warning');
                 return;
             end
@@ -285,7 +298,7 @@ classdef ResultsController < handle
                 exportgraphics(obj.UIAxes, path, 'Resolution', 150, ...
                     'BackgroundColor', 'white');
             catch err
-                obj.alert(err.message, '保存失败', ...
+                obj.alert(err.message, mps.tr('保存失败', 'Save failed'), ...
                     'Icon', 'error');
                 return;
             end
@@ -301,12 +314,14 @@ classdef ResultsController < handle
                 obj.LastRun.figures = struct('path', {}, ...
                     'title', {}, 'figFile', {});
             end
+            customTitle = mps.tr('自定义工作区图', ...
+                'Custom workspace plot');
             obj.LastRun.figures(end+1) = struct('path', path, ...
-                'title', '自定义工作区图', 'figFile', '');
+                'title', customTitle, 'figFile', '');
             obj.CustomPlotPath = path;
             obj.refreshResults();
             for k = 1:numel(obj.FigureDrop.Items)
-                if contains(obj.FigureDrop.Items{k}, '自定义工作区图')
+                if contains(obj.FigureDrop.Items{k}, customTitle)
                     obj.FigureDrop.Value = obj.FigureDrop.Items{k};
                     obj.showFigure();
                     break;
@@ -315,17 +330,22 @@ classdef ResultsController < handle
             obj.LastReport = mps.writeReport(obj.OutputDir, sourceFile, ...
                 params, obj.LastRun);
             obj.ReportButton.Enable = 'on';
-            obj.StatusLabel.Text = '自定义图已保存，HTML 报告已更新。';
+            obj.StatusLabel.Text = mps.tr( ...
+                '自定义图已保存，HTML 报告已更新。', ...
+                'Custom plot saved and the HTML report updated.');
         end
 
         function exportCurveCsv(obj)
+            noneLabel = mps.tr('(无)', '(None)');
             if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
-                obj.alert('请先运行一次脚本。', '没有输出目录', ...
+                obj.alert(mps.tr('请先运行一次脚本。', ...
+                    'Run a script first.'), ...
+                    mps.tr('没有输出目录', 'No output folder'), ...
                     'Icon', 'warning');
                 return;
             end
             xName = obj.XDrop.Value;
-            if isempty(xName) || strcmp(xName, '(无)')
+            if isempty(xName) || strcmp(xName, noneLabel)
                 return;
             end
             yNames = obj.YList.Value;
@@ -333,13 +353,15 @@ classdef ResultsController < handle
                 yNames = {yNames};
             end
             if isempty(yNames) || (numel(yNames) == 1 && ...
-                    strcmp(yNames{1}, '(无)'))
+                    strcmp(yNames{1}, noneLabel))
                 return;
             end
             S = obj.loadVariables([{xName}, yNames]);
             if ~isfield(S, xName)
-                obj.alert('工作区里没有可导出的变量。', ...
-                    '没有数据', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    '工作区里没有可导出的变量。', ...
+                    'There are no variables in the workspace to export.'), ...
+                    mps.tr('没有数据', 'No data'), 'Icon', 'warning');
                 return;
             end
             x = S.(xName);
@@ -357,8 +379,12 @@ classdef ResultsController < handle
                 names{end+1} = matlab.lang.makeValidName(yNames{k}); %#ok<AGROW>
             end
             if numel(cols) < 2
-                obj.alert('X/Y 变量长度不一致，无法导出。', ...
-                    '导出失败', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    'X/Y 变量长度不一致，无法导出。', ...
+                    ['X and Y variables have different lengths; ' ...
+                     'cannot export.']), ...
+                    mps.tr('导出失败', 'Export failed'), ...
+                    'Icon', 'warning');
                 return;
             end
             names = matlab.lang.makeUniqueStrings(names);
@@ -368,20 +394,25 @@ classdef ResultsController < handle
                 T = array2table(data, 'VariableNames', names);
                 writetable(T, csvPath, 'Encoding', 'UTF-8');
             catch err
-                obj.alert(err.message, '导出失败', ...
+                obj.alert(err.message, ...
+                    mps.tr('导出失败', 'Export failed'), ...
                     'Icon', 'error');
                 return;
             end
-            obj.StatusLabel.Text = sprintf('曲线数据已导出：%s', csvPath);
-            obj.alert(sprintf('已导出 %d 行 × %d 列：\n%s', ...
+            obj.StatusLabel.Text = mps.tr('曲线数据已导出：%s', ...
+                'Curve data exported: %s', csvPath);
+            obj.alert(mps.tr('已导出 %d 行 × %d 列：\n%s', ...
+                'Exported %d rows × %d columns:\n%s', ...
                 size(data, 1), size(data, 2), csvPath), ...
-                '导出成功', 'Icon', 'info');
+                mps.tr('导出成功', 'Export complete'), 'Icon', 'info');
         end
 
         function openReport(obj)
             if isempty(obj.LastReport) || ~isfile(obj.LastReport)
-                obj.alert('还没有生成报告，请先运行。', ...
-                    '没有报告', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    '还没有生成报告，请先运行。', ...
+                    'No report has been generated yet. Run a script first.'), ...
+                    mps.tr('没有报告', 'No report'), 'Icon', 'warning');
                 return;
             end
             try
@@ -390,7 +421,8 @@ classdef ResultsController < handle
                 try
                     winopen(obj.LastReport);
                 catch err
-                    obj.alert(err.message, '打开失败', ...
+                    obj.alert(err.message, ...
+                        mps.tr('打开失败', 'Open failed'), ...
                         'Icon', 'error');
                 end
             end
@@ -398,14 +430,17 @@ classdef ResultsController < handle
 
         function openFolder(obj)
             if isempty(obj.OutputDir) || ~isfolder(obj.OutputDir)
-                obj.alert('还没有输出目录，请先运行。', ...
-                    '没有输出', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    '还没有输出目录，请先运行。', ...
+                    'There is no output folder yet. Run a script first.'), ...
+                    mps.tr('没有输出', 'No output'), 'Icon', 'warning');
                 return;
             end
             try
                 mps.openPath(obj.OutputDir);
             catch err
-                obj.alert(err.message, '打开失败', ...
+                obj.alert(err.message, ...
+                    mps.tr('打开失败', 'Open failed'), ...
                     'Icon', 'error');
             end
         end
@@ -420,7 +455,9 @@ classdef ResultsController < handle
                 end
                 obj.LastRun.figureHandles = gobjects(0);
             end
-            obj.StatusLabel.Text = '已关闭本次运行产生的图窗。';
+            obj.StatusLabel.Text = mps.tr( ...
+                '已关闭本次运行产生的图窗。', ...
+                'Closed the figures created by this run.');
         end
 
         function matFile = workspaceMatFile(obj)

@@ -136,7 +136,8 @@ classdef ParameterTableController < handle
             obj.RestoringState = false;
             obj.SessionDirty = true;
             obj.refresh();
-            obj.StatusLabel.Text = '已撤销上一次修改。';
+            obj.StatusLabel.Text = mps.tr('已撤销上一次修改。', ...
+                'Undid the last change.');
         end
 
         function redo(obj)
@@ -151,16 +152,18 @@ classdef ParameterTableController < handle
             obj.RestoringState = false;
             obj.SessionDirty = true;
             obj.refresh();
-            obj.StatusLabel.Text = '已重做上一次修改。';
+            obj.StatusLabel.Text = mps.tr('已重做上一次修改。', ...
+                'Redid the last change.');
         end
 
         function refresh(obj)
+            allFiles = mps.tr('(全部文件)', '(All files)');
             if isempty(obj.Params)
                 obj.Table.Data = cell(0, 10);
                 obj.VisibleIdx = [];
                 obj.clearSelection();
-                obj.FileFilterDrop.Items = {'(全部文件)'};
-                obj.FileFilterDrop.Value = '(全部文件)';
+                obj.FileFilterDrop.Items = {allFiles};
+                obj.FileFilterDrop.Value = allFiles;
                 obj.CountLabel.Text = '0 / 0';
                 obj.updateAnnotationStatus();
                 obj.updateUndoButtons();
@@ -170,7 +173,7 @@ classdef ParameterTableController < handle
             files = unique({obj.Params.sourceFile});
             labels = unique(cellfun(@fileName, files, ...
                 'UniformOutput', false), 'stable');
-            obj.FileFilterDrop.Items = [{'(全部文件)'}, labels]; %#ok<AGROW>
+            obj.FileFilterDrop.Items = [{allFiles}, labels]; %#ok<AGROW>
             if ~any(strcmp(obj.FileFilterDrop.Items, obj.FileFilterDrop.Value))
                 obj.FileFilterDrop.Value = obj.FileFilterDrop.Items{1};
             end
@@ -183,19 +186,21 @@ classdef ParameterTableController < handle
             end
 
             mode = obj.FilterDrop.Value;
+            recommended = mps.tr('推荐参数', 'Recommended');
+            modified = mps.tr('已修改', 'Modified');
             q = lower(strtrim(char(obj.SearchField.Value)));
             idx = [];
             for k = 1:numel(obj.Params)
                 p = obj.Params(k);
                 switch mode
-                    case '推荐参数'
+                    case recommended
                         keep = p.score >= obj.RecommendedMinScore;
-                    case '已修改'
+                    case modified
                         keep = p.isChanged;
                     otherwise
                         keep = true;
                 end
-                if keep && ~strcmp(fileFilter, '(全部文件)') && ...
+                if keep && ~strcmp(fileFilter, allFiles) && ...
                         ~strcmp(fileName(p.sourceFile), fileFilter)
                     keep = false;
                 end
@@ -222,7 +227,7 @@ classdef ParameterTableController < handle
                     note = [note(1:117), '...'];
                 end
                 if p.locked
-                    nameCell = ['[锁] ' p.name];
+                    nameCell = ['[' mps.tr('锁', 'Lock') '] ' p.name];
                 else
                     nameCell = p.name;
                 end
@@ -239,16 +244,19 @@ classdef ParameterTableController < handle
             end
             obj.Table.Data = data;
             obj.restoreTableSelection();
-            obj.CountLabel.Text = sprintf('%d / %d · 已修改 %d', ...
-                numel(idx), numel(obj.Params), sum([obj.Params.isChanged]));
+            obj.CountLabel.Text = mps.tr('%d / %d · 已修改 %d', ...
+                '%d / %d · %d modified', numel(idx), ...
+                numel(obj.Params), sum([obj.Params.isChanged]));
             obj.updateAnnotationStatus();
 
             rec = [obj.Params.score] >= obj.RecommendedMinScore;
             if any(rec)
                 if all([obj.Params(rec).use])
-                    obj.SelectAllButton.Text = '取消全选';
+                    obj.SelectAllButton.Text = mps.tr('取消全选', ...
+                        'Deselect all');
                 else
-                    obj.SelectAllButton.Text = '全选推荐';
+                    obj.SelectAllButton.Text = mps.tr('全选推荐', ...
+                        'Select all recommended');
                 end
             end
             obj.updateUndoButtons();
@@ -280,8 +288,12 @@ classdef ParameterTableController < handle
                 end
             elseif col == 6
                 if obj.Params(idx).locked
-                    obj.alert('该参数已锁定，不能修改。请先在“锁定”列取消勾选。', ...
-                        '参数已锁定', 'Icon', 'warning');
+                    obj.alert(mps.tr( ...
+                        '该参数已锁定，不能修改。请先在“锁定”列取消勾选。', ...
+                        ['This parameter is locked and cannot be changed. ' ...
+                         'Clear the "Lock" column first.']), ...
+                        mps.tr('参数已锁定', 'Parameter locked'), ...
+                        'Icon', 'warning');
                     obj.refresh();
                     return;
                 end
@@ -291,9 +303,12 @@ classdef ParameterTableController < handle
                 end
                 [ok, ~] = mps.validateValue(newVal);
                 if ~ok
-                    obj.alert(sprintf( ...
+                    obj.alert(mps.tr( ...
                         '“%s”不是有效的数值表达式。\n\n示例：2、2*pi、[1 2 3]、1:0.1:10', ...
-                        newVal), '输入无效', 'Icon', 'warning');
+                        ['"%s" is not a valid numeric expression.' ...
+                         '\n\nExamples: 2, 2*pi, [1 2 3], 1:0.1:10'], ...
+                        newVal), mps.tr('输入无效', 'Invalid input'), ...
+                        'Icon', 'warning');
                     obj.refresh();
                     return;
                 end
@@ -359,7 +374,8 @@ classdef ParameterTableController < handle
             end
             ann = annotationText(obj.Params(idx));
             if ~isempty(ann)
-                preview = [{'注释：' ann}; {''}; preview];
+                preview = [{[mps.tr('注释：', 'Notes: ') ann]}; ...
+                    {''}; preview];
             end
             obj.SourcePreview.Value = preview;
         end
@@ -392,13 +408,16 @@ classdef ParameterTableController < handle
                 obj.Params(k).isChanged = false;
             end
             obj.refresh();
-            obj.StatusLabel.Text = '已把所有新值重置为当前值。';
+            obj.StatusLabel.Text = mps.tr( ...
+                '已把所有新值重置为当前值。', ...
+                'Reset all new values to their current values.');
         end
 
         function onBulkEdit(obj)
             if isempty(obj.SourceFile)
-                obj.alert('请先打开一个 .m 文件。', '没有文件', ...
-                    'Icon', 'warning');
+                obj.alert(mps.tr('请先打开一个 .m 文件。', ...
+                    'Open a .m file first.'), ...
+                    mps.tr('没有文件', 'No file'), 'Icon', 'warning');
                 return;
             end
             if isempty(obj.Params)
@@ -417,9 +436,14 @@ classdef ParameterTableController < handle
             % have replaced the table while it was open.  Indices computed
             % from the old snapshot would silently edit wrong parameters.
             if ~isequal(obj.Params, paramsSnapshot)
-                obj.alert(['对话框打开期间参数表已发生变化，' ...
-                    '本次批量修改已取消，请重新操作。'], ...
-                    '参数已变化', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    ['对话框打开期间参数表已发生变化，' ...
+                     '本次批量修改已取消，请重新操作。'], ...
+                    ['The parameter table changed while the dialog was ' ...
+                     'open, so this bulk edit was cancelled. ' ...
+                     'Please try again.']), ...
+                    mps.tr('参数已变化', 'Parameters changed'), ...
+                    'Icon', 'warning');
                 return;
             end
 
@@ -433,25 +457,29 @@ classdef ParameterTableController < handle
                         obj.Params, result.indices, result.op, result.value);
                 end
             catch err
-                obj.alert(err.message, '批量修改失败', 'Icon', 'error');
+                obj.alert(err.message, ...
+                    mps.tr('批量修改失败', 'Bulk edit failed'), ...
+                    'Icon', 'error');
                 return;
             end
 
             obj.refresh();
-            msg = sprintf('批量修改：%d 个参数已更新', stats.changed);
+            msg = mps.tr('批量修改：%d 个参数已更新', ...
+                'Bulk edit: %d parameters updated', stats.changed);
             if stats.skippedLocked > 0
-                msg = sprintf('%s，跳过已锁定 %d 个', msg, ...
-                    stats.skippedLocked);
+                msg = mps.tr('%s，跳过已锁定 %d 个', ...
+                    '%s, %d locked skipped', msg, stats.skippedLocked);
             end
             if stats.skippedNonNumeric > 0
-                msg = sprintf('%s，跳过非数值 %d 个', msg, ...
+                msg = mps.tr('%s，跳过非数值 %d 个', ...
+                    '%s, %d non-numeric skipped', msg, ...
                     stats.skippedNonNumeric);
             end
             if stats.skippedInvalid > 0
-                msg = sprintf('%s，跳过无效 %d 个', msg, ...
-                    stats.skippedInvalid);
+                msg = mps.tr('%s，跳过无效 %d 个', ...
+                    '%s, %d invalid skipped', msg, stats.skippedInvalid);
             end
-            obj.StatusLabel.Text = [msg '。'];
+            obj.StatusLabel.Text = [msg mps.tr('。', '.')];
         end
 
         function setParam(obj, name, value)
@@ -493,8 +521,12 @@ classdef ParameterTableController < handle
         function onToggleLock(obj)
             indices = obj.SelectedParams;
             if isempty(indices)
-                obj.alert('请先在参数表里点选一行（可多选）。', ...
-                    '没有选中行', 'Icon', 'warning');
+                obj.alert(mps.tr( ...
+                    '请先在参数表里点选一行（可多选）。', ...
+                    ['Select a row in the parameter table first ' ...
+                     '(multi-select is supported).']), ...
+                    mps.tr('没有选中行', 'No row selected'), ...
+                    'Icon', 'warning');
                 return;
             end
             obj.pushUndo();
@@ -505,7 +537,8 @@ classdef ParameterTableController < handle
                         strtrim(obj.Params(idx).value), ...
                         strtrim(obj.Params(idx).newValue));
                 end
-                obj.StatusLabel.Text = sprintf('已解锁 %d 个参数。', ...
+                obj.StatusLabel.Text = mps.tr( ...
+                    '已解锁 %d 个参数。', 'Unlocked %d parameters.', ...
                     numel(indices));
             else
                 for idx = indices
@@ -513,8 +546,10 @@ classdef ParameterTableController < handle
                     obj.Params(idx).newValue = obj.Params(idx).value;
                     obj.Params(idx).isChanged = false;
                 end
-                obj.StatusLabel.Text = sprintf( ...
-                    '已锁定 %d 个参数（新值保持原值）。', numel(indices));
+                obj.StatusLabel.Text = mps.tr( ...
+                    '已锁定 %d 个参数（新值保持原值）。', ...
+                    ['Locked %d parameters (new values keep the ' ...
+                     'current values).'], numel(indices));
             end
             obj.refresh();
         end
@@ -583,15 +618,15 @@ classdef ParameterTableController < handle
         function updateLockButton(obj)
             indices = obj.SelectedParams;
             if isempty(indices)
-                obj.LockButton.Text = '锁定选中';
+                obj.LockButton.Text = mps.tr('锁定选中', 'Lock selected');
                 return;
             end
             if all([obj.Params(indices).locked])
-                obj.LockButton.Text = sprintf('解锁选中 (%d)', ...
-                    numel(indices));
+                obj.LockButton.Text = mps.tr('解锁选中 (%d)', ...
+                    'Unlock selected (%d)', numel(indices));
             else
-                obj.LockButton.Text = sprintf('锁定选中 (%d)', ...
-                    numel(indices));
+                obj.LockButton.Text = mps.tr('锁定选中 (%d)', ...
+                    'Lock selected (%d)', numel(indices));
             end
         end
 
@@ -605,10 +640,12 @@ classdef ParameterTableController < handle
                 end
             end
             if n == 0
-                obj.AnnotationStatus.Text = '未导入注释';
+                obj.AnnotationStatus.Text = mps.tr('未导入注释', ...
+                    'No notes imported');
                 obj.AnnotationStatus.FontColor = [0.4 0.4 0.4];
             else
-                obj.AnnotationStatus.Text = sprintf('已注释 %d / %d', n, total);
+                obj.AnnotationStatus.Text = mps.tr('已注释 %d / %d', ...
+                    'Annotated %d / %d', n, total);
                 obj.AnnotationStatus.FontColor = [0.05 0.45 0.15];
             end
         end
@@ -674,21 +711,21 @@ end
 % -------------------------------------------------------------------------
 function s = categoryLabel(c)
     switch c
-        case 'assignment', s = '赋值';
-        case 'struct', s = '结构体字段';
-        case 'array', s = '数组元素';
-        case 'range', s = '范围';
-        case 'expression', s = '表达式';
-        case 'argument', s = '函数参数';
-        case 'index', s = '索引';
-        case 'style', s = '绘图样式';
-        case 'layout', s = '界面布局';
-        case 'size', s = '数组尺寸';
-        case 'control', s = '控制流';
-        case 'function', s = '函数体';
-        case 'annotated', s = '注释标记';
-        case 'ignored', s = '已忽略';
-        case 'manual', s = '手动参数';
+        case 'assignment', s = mps.tr('赋值', 'Assignment');
+        case 'struct', s = mps.tr('结构体字段', 'Struct field');
+        case 'array', s = mps.tr('数组元素', 'Array element');
+        case 'range', s = mps.tr('范围', 'Range');
+        case 'expression', s = mps.tr('表达式', 'Expression');
+        case 'argument', s = mps.tr('函数参数', 'Function argument');
+        case 'index', s = mps.tr('索引', 'Index');
+        case 'style', s = mps.tr('绘图样式', 'Plot style');
+        case 'layout', s = mps.tr('界面布局', 'UI layout');
+        case 'size', s = mps.tr('数组尺寸', 'Array size');
+        case 'control', s = mps.tr('控制流', 'Control flow');
+        case 'function', s = mps.tr('函数体', 'Function body');
+        case 'annotated', s = mps.tr('注释标记', 'Annotation marker');
+        case 'ignored', s = mps.tr('已忽略', 'Ignored');
+        case 'manual', s = mps.tr('手动参数', 'Manual parameter');
         otherwise, s = c;
     end
 end

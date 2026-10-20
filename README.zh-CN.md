@@ -44,6 +44,8 @@
    install            % 仅当前 MATLAB 会话生效
    % 或 install('Save')  % 写入 MATLAB path，之后可在任意目录启动
    MatlabParameterStudio
+   % 英文界面：MatlabParameterStudioEnglish
+   % 或：MatlabParameterStudio('Language', 'en')
    ```
 
 2. 点“打开 .m 文件”，选择一个脚本（例如 `demo/demo_simulation.m`）。
@@ -68,6 +70,7 @@
 
 ## 界面说明
 
+- **中英文界面**：默认中文；运行 `MatlabParameterStudioEnglish` 或 `MatlabParameterStudio('Language', 'en')` 可切换到英文界面，对话框、状态消息和 HTML 报告也会使用英文。
 - **参数表**：`使用`（勾选参与运行的参数）、`锁定`（钉死原值，不允许修改）、`参数`（推导出的名字）、`当前值`、`新值`（可编辑）、`行`、`类型`、`说明`、`注释`（AI 注释列）。
 - **手动参数**：点“添加参数...”可以补一个扫描器没识别到的变量；它会被写入 `<文件名>_manual.json`，运行时作为赋值语句插到脚本开头。
 - **多选与批量修改**：按住 `Ctrl`/`Shift` 点选多行，点“批量修改...”或按 `Ctrl+B`，可以批量设值、乘系数、加偏移、恢复原值、勾选/取消勾选、锁定/解锁，也可以从 Excel 复制一列后“从剪贴板填入新值”。
@@ -358,10 +361,15 @@ mps.writeReport
 ## 目录结构
 
 ```text
-MatlabParameterStudio.m      启动入口（函数）
+MatlabParameterStudio.m      启动入口（函数，默认中文界面）
+MatlabParameterStudioEnglish.m 英文界面入口
 install.m                    安装/加入 MATLAB path
 +mps/App.m                   界面事件与协调（UI/执行器在下方）
 +mps/version.m               版本号
++mps/language.m              界面语言状态（zh / en）
++mps/setLanguage.m            切换界面语言
++mps/tr.m                     中英文显示文本选择
++mps/isNoneLabel.m            语言无关的“(无)”占位符判断
 +mps/buildAppUI.m            主窗口控件创建 + tooltip
 +mps/showQuickStart.m        “快速上手”说明窗口
 +mps/RunExecutor.m           单次运行执行器（临时脚本/图窗/报告）

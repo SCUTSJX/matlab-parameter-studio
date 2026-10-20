@@ -35,7 +35,9 @@ function [params, stats] = bulkEdit(params, indices, op, value)
             [ok, ~] = mps.validateValue(value);
             if ~ok || isempty(value)
                 error('mps:bulkEdit:invalidValue', ...
-                    '新的参数值不是有效的数值表达式：%s', value);
+                    mps.tr('新的参数值不是有效的数值表达式：%s', ...
+                    'The new parameter value is not a valid numeric expression: %s'), ...
+                    value);
             end
             for k = indices
                 if isLocked(params(k))
@@ -53,7 +55,9 @@ function [params, stats] = bulkEdit(params, indices, op, value)
             if ~ok || ~isnumeric(operand) || ~isscalar(operand) || ...
                     ~isreal(operand) || ~isfinite(operand)
                 error('mps:bulkEdit:invalidOperand', ...
-                    '系数/偏移量必须是有限实数：%s', value);
+                    mps.tr('系数/偏移量必须是有限实数：%s', ...
+                    'The factor/offset must be a finite real number: %s'), ...
+                    value);
             end
             for k = indices
                 if isLocked(params(k))
@@ -116,7 +120,8 @@ function [params, stats] = bulkEdit(params, indices, op, value)
 
         otherwise
             error('mps:bulkEdit:unknownOperation', ...
-                '未知的批量操作：%s', op);
+                mps.tr('未知的批量操作：%s', ...
+                'Unknown batch operation: %s'), op);
     end
 end
 

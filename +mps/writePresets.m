@@ -27,7 +27,9 @@ function writePresets(sourceFile, presets)
 
     fid = fopen(p, 'w', 'n', 'UTF-8');
     if fid < 0
-        error('mps:writePresets:cannotWrite', '无法写入参数集文件：%s', p);
+        error('mps:writePresets:cannotWrite', ...
+            mps.tr('无法写入参数集文件：%s', ...
+            'Cannot write preset file: %s'), p);
     end
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
     fprintf(fid, '%s', txt);

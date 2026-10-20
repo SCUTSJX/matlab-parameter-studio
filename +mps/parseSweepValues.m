@@ -30,12 +30,15 @@ function [values, err] = parseSweepValues(txt)
         tok = tokens{k};
         [ok, v] = mps.validateValue(tok);
         if ~ok || isempty(v)
-            err = sprintf('无法解析扫描值：%s', tok);
+            err = mps.tr('无法解析扫描值：%s', ...
+                'Cannot parse sweep value: %s', tok);
             values = [];
             return;
         end
         if numel(v) > 200
-            err = sprintf('单个扫描值的元素太多（%d）：%s', numel(v), tok);
+            err = mps.tr('单个扫描值的元素太多（%d）：%s', ...
+                'Too many elements in a single sweep value (%d): %s', ...
+                numel(v), tok);
             values = [];
             return;
         end

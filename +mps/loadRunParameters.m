@@ -13,7 +13,8 @@ function [values, meta] = loadRunParameters(runPath)
     meta = struct('sourceFile', '', 'created', '', 'ok', NaN, 'error', '');
     if isempty(runPath) || ~isfolder(runPath)
         error('mps:loadRunParameters:missingFolder', ...
-            '运行目录不存在：%s', runPath);
+            mps.tr('运行目录不存在：%s', ...
+            'Run folder does not exist: %s'), runPath);
     end
 
     metaPath = fullfile(runPath, 'run.json');
@@ -24,21 +25,26 @@ function [values, meta] = loadRunParameters(runPath)
                 meta = candidate;
             end
         catch err
-            mps.logWarning('读取运行元数据', err);
+            mps.logWarning(mps.tr('读取运行元数据', ...
+                'Read run metadata'), err);
         end
     end
 
     paramsPath = fullfile(runPath, 'parameters.json');
     if ~isfile(paramsPath)
         error('mps:loadRunParameters:missingParameters', ...
-            '这次运行没有 parameters.json，无法载入参数：%s', runPath);
+            mps.tr('这次运行没有 parameters.json，无法载入参数：%s', ...
+            'This run has no parameters.json, so parameters cannot be loaded: %s'), ...
+            runPath);
     end
 
     try
         data = jsondecode(fileread(paramsPath));
     catch err
         error('mps:loadRunParameters:invalidJson', ...
-            '无法读取参数记录：%s\n%s', paramsPath, err.message);
+            mps.tr('无法读取参数记录：%s\n%s', ...
+            'Cannot read the parameter record: %s\n%s'), ...
+            paramsPath, err.message);
     end
     if iscell(data)
         data = [data{:}];

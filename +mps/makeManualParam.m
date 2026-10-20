@@ -10,12 +10,14 @@ function p = makeManualParam(sourceFile, name, value, description, unit)
     value = strtrim(char(value));
     if ~isvarname(name)
         error('mps:makeManualParam:badName', ...
-            '参数名必须是合法 MATLAB 变量名：%s', name);
+            mps.tr('参数名必须是合法 MATLAB 变量名：%s', ...
+            'Parameter name must be a valid MATLAB variable name: %s'), name);
     end
     [ok, ~] = mps.validateValue(value);
     if ~ok || isempty(value)
         error('mps:makeManualParam:badValue', ...
-            '手动参数的值无效：%s', value);
+            mps.tr('手动参数的值无效：%s', ...
+            'Invalid value for manual parameter: %s'), value);
     end
     p = struct();
     p.id = sprintf('manual|%s', name);
@@ -27,7 +29,7 @@ function p = makeManualParam(sourceFile, name, value, description, unit)
     p.colEnd = 0;
     p.score = 10;
     p.category = 'manual';
-    p.note = '手动添加';
+    p.note = mps.tr('手动添加', 'Manually added');
     p.context = '';
     p.use = true;
     p.isChanged = false;

@@ -34,7 +34,8 @@ classdef RunExecutor < handle
 
         function out = run(obj)
             if isempty(obj.SourceFile)
-                error('mps:RunExecutor:noSource', '没有源文件。');
+                error('mps:RunExecutor:noSource', ...
+                    mps.tr('没有源文件。', 'No source file.'));
             end
             params = obj.Params;
             for k = 1:numel(params)
@@ -42,8 +43,9 @@ classdef RunExecutor < handle
                     [ok, ~] = mps.validateValue(params(k).newValue);
                     if ~ok
                         error('mps:RunExecutor:invalidValue', ...
-                            '参数 %s 的新值无效：%s', ...
-                            params(k).name, params(k).newValue);
+                            mps.tr('参数 %s 的新值无效：%s', ...
+                                'Invalid new value for parameter %s: %s', ...
+                                params(k).name, params(k).newValue));
                     end
                 end
             end
@@ -64,7 +66,8 @@ classdef RunExecutor < handle
             scriptCleaner = onCleanup(@() ...
                 obj.cleanupTempScript(tempScript, keepScript)); %#ok<NASGU>
 
-            obj.Progress('运行 MATLAB 脚本...');
+            obj.Progress(mps.tr('运行 MATLAB 脚本...', ...
+                'Running the MATLAB script...'));
             oldFigVis = get(groot, 'defaultFigureVisible');
             set(groot, 'defaultFigureVisible', 'off');
             figVisCleaner = onCleanup(@() set(groot, ...
@@ -87,11 +90,13 @@ classdef RunExecutor < handle
                     r.scriptPath = keepScript;
                 end
             catch err
-                mps.logWarning('保存运行脚本副本', err);
+                mps.logWarning(mps.tr('保存运行脚本副本', ...
+                    'Save a copy of the run script'), err);
             end
             clear scriptCleaner;
 
-            obj.Progress('生成 HTML 报告...');
+            obj.Progress(mps.tr('生成 HTML 报告...', ...
+                'Writing the HTML report...'));
             reportPath = mps.writeReport(outDir, obj.SourceFile, params, r);
 
             out = struct('run', r, 'outDir', outDir, ...
@@ -116,7 +121,9 @@ classdef RunExecutor < handle
                 end
                 mkdir(outDir);
             catch err
-                mps.logWarning('创建运行输出目录，改用临时目录', err);
+                mps.logWarning(mps.tr('创建运行输出目录，改用临时目录', ...
+                    'Create the run output folder; falling back to a temporary folder'), ...
+                    err);
                 root = fullfile(tempdir, 'matlab_parameter_studio_runs');
                 if ~isfolder(root)
                     mkdir(root);
@@ -152,14 +159,17 @@ classdef RunExecutor < handle
                 try
                     copyfile(tempScript, keepScript);
                 catch err
-                    mps.logWarning('保留运行脚本', err);
+                    mps.logWarning(mps.tr('保留运行脚本', ...
+                        'Keep the run script'), err);
                 end
             end
             if ~strcmpi(tempScript, keepScript) && isfile(tempScript)
                 try
                     delete(tempScript);
                 catch err
-                    mps.logWarning('清理临时运行脚本', err, 'Silent', true);
+                    mps.logWarning(mps.tr('清理临时运行脚本', ...
+                        'Remove the temporary run script'), err, ...
+                        'Silent', true);
                 end
             end
         end

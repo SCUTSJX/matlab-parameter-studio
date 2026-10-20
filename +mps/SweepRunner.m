@@ -72,8 +72,10 @@ classdef SweepRunner < handle
                 try
                     [results, canceled] = obj.runParallel(sweepRoot, scenarios);
                 catch err
-                    obj.Progress(0, sprintf( ...
-                        '并行启动失败，改为串行：%s', err.message));
+                    obj.Progress(0, mps.tr( ...
+                        '并行启动失败，改为串行：%s', ...
+                        'Parallel start failed; running serially: %s', ...
+                        err.message));
                     [results, canceled] = obj.runSerial(sweepRoot, scenarios);
                 end
             else
@@ -85,9 +87,13 @@ classdef SweepRunner < handle
             end
 
             if canceled
-                obj.Progress(0.97, '已取消剩余组，正在生成已完成部分的报告...');
+                obj.Progress(0.97, mps.tr( ...
+                    ['已取消剩余组，正在生成已完成部分的报告...'], ...
+                    ['Remaining scenarios canceled; writing the report ' ...
+                     'for the completed scenarios...']));
             else
-                obj.Progress(0.97, '生成叠加曲线和报告...');
+                obj.Progress(0.97, mps.tr('生成叠加曲线和报告...', ...
+                    'Building overlay curves and reports...'));
             end
             overlayPath = '';
             if obj.Overlay
@@ -99,7 +105,7 @@ classdef SweepRunner < handle
             [reportPath, metricsPath] = mps.writeSweepReport( ...
                 sweepRoot, obj.SourceFile, names, obj.Values, scenarios, ...
                 results, overlayPath, metrics);
-            obj.Progress(1, '完成。');
+            obj.Progress(1, mps.tr('完成。', 'Done.'));
 
             out = struct();
             out.ok = true;
@@ -133,11 +139,11 @@ classdef SweepRunner < handle
 
         function slim = loadSelected(obj, matFile)
             names = {};
-            if ~isempty(obj.XName) && ~strcmp(obj.XName, '(无)')
+            if ~isempty(obj.XName) && ~mps.isNoneLabel(obj.XName)
                 names{end+1} = obj.XName;
             end
             for k = 1:numel(obj.YNames)
-                if ~strcmp(obj.YNames{k}, '(无)')
+                if ~mps.isNoneLabel(obj.YNames{k})
                     names{end+1} = obj.YNames{k}; %#ok<AGROW>
                 end
             end
@@ -153,7 +159,8 @@ classdef SweepRunner < handle
                     end
                 end
             catch err
-                mps.logWarning('加载扫描曲线变量', err);
+                mps.logWarning(mps.tr('加载扫描曲线变量', ...
+                    'Load sweep curve variables'), err);
             end
         end
 
@@ -183,7 +190,8 @@ classdef SweepRunner < handle
                     break;
                 end
                 obj.Progress((k - 1) / max(total, 1), ...
-                    sprintf('运行 %d/%d：%s', k, total, scenarios(k).label));
+                    mps.tr('运行 %d/%d：%s', 'Running %d/%d: %s', ...
+                        k, total, scenarios(k).label));
                 runDir = fullfile(sweepRoot, sprintf('run_%02d', k));
                 if ~isfolder(runDir)
                     mkdir(runDir);
@@ -239,7 +247,8 @@ classdef SweepRunner < handle
                             r.scriptPath = keepScript;
                         end
                     catch err
-                        mps.logWarning('保存扫描运行脚本副本', err);
+                        mps.logWarning(mps.tr('保存扫描运行脚本副本', ...
+                            'Save a copy of the sweep run script'), err);
                     end
                     clear cleaner;
                 end
@@ -273,7 +282,8 @@ classdef SweepRunner < handle
                 [results, canceled] = obj.runSerial(sweepRoot, scenarios);
                 return;
             end
-            obj.Progress(0, sprintf('启动并行池（%d workers）...', workers));
+            obj.Progress(0, mps.tr('启动并行池（%d workers）...', ...
+                'Starting parallel pool (%d workers)...', workers));
             pool = gcp('nocreate');
             if isempty(pool)
                 pool = parpool('Processes', workers);
@@ -281,8 +291,11 @@ classdef SweepRunner < handle
             root = fileparts(fileparts(which('mps.SweepRunner')));
             try
                 wait(parfevalOnAll(pool, @addpath, 0, root));
+                wait(parfevalOnAll(pool, @mps.setLanguage, 0, ...
+                    mps.language()));
             catch err
-                mps.logWarning('向并行工作进程添加项目路径', err);
+                mps.logWarning(mps.tr('向并行工作进程添加项目路径', ...
+                    'Add the project path to parallel workers'), err);
             end
 
             futures = cell(1, total);
@@ -317,7 +330,9 @@ classdef SweepRunner < handle
                     try
                         cancel(futureArray);
                     catch err
-                        mps.logWarning('取消剩余扫描任务', err, 'Silent', true);
+                        mps.logWarning(mps.tr('取消剩余扫描任务', ...
+                            'Cancel the remaining sweep tasks'), err, ...
+                            'Silent', true);
                     end
                     canceled = true;
                     break;
@@ -331,8 +346,8 @@ classdef SweepRunner < handle
                     'workspace', {res.workspace}, ...
                     'workspaceData', {res.workspaceData}); %#ok<AGROW>
                 obj.Progress(done / total, ...
-                    sprintf('完成 %d/%d：%s', done, total, ...
-                    scenarios(idx).label));
+                    mps.tr('完成 %d/%d：%s', 'Completed %d/%d: %s', ...
+                        done, total, scenarios(idx).label));
             end
         end
 
@@ -372,7 +387,8 @@ classdef SweepRunner < handle
                     tempScript = keepScript;
                 end
             catch err
-                mps.logWarning('创建扫描临时脚本', err);
+                mps.logWarning(mps.tr('创建扫描临时脚本', ...
+                    'Create the temporary sweep script'), err);
                 tempScript = keepScript;
             end
         end
@@ -422,7 +438,8 @@ classdef SweepRunner < handle
 
             if ~isempty(overlayPath)
                 agg.figures(end+1) = struct('path', overlayPath, ...
-                    'title', '叠加曲线', 'figFile', '');
+                    'title', mps.tr('叠加曲线', 'Overlay curves'), ...
+                    'figFile', '');
             end
             for k = 1:numel(results)
                 agg.elapsedSeconds = agg.elapsedSeconds + results(k).elapsed;
@@ -450,7 +467,7 @@ classdef SweepRunner < handle
 
         function overlayPath = makeOverlay(obj, sweepRoot, results)
             overlayPath = '';
-            if isempty(obj.XName) || strcmp(obj.XName, '(无)') || ...
+            if isempty(obj.XName) || mps.isNoneLabel(obj.XName) || ...
                     isempty(obj.YNames)
                 return;
             end
@@ -499,8 +516,8 @@ classdef SweepRunner < handle
                 return;
             end
             xlabel(obj.XName, 'Interpreter', 'none');
-            ylabel('值');
-            title('批量扫描叠加曲线');
+            ylabel(mps.tr('值', 'Value'));
+            title(mps.tr('批量扫描叠加曲线', 'Batch sweep overlay'));
             legend('Location', 'eastoutside', 'Interpreter', 'none', ...
                 'FontSize', 9);
             overlayPath = fullfile(sweepRoot, 'overlay.png');
@@ -509,7 +526,8 @@ classdef SweepRunner < handle
                     'BackgroundColor', 'white');
             catch err
                 overlayPath = '';
-                mps.logWarning('导出扫描叠加图', err);
+                mps.logWarning(mps.tr('导出扫描叠加图', ...
+                    'Export the sweep overlay figure'), err);
             end
             clear half;
         end

@@ -16,7 +16,7 @@ function session = readSession(sourceFile)
     try
         data = jsondecode(fileread(path));
     catch err
-        mps.logWarning('读取会话文件', err);
+        mps.logWarning(mps.tr('读取会话文件', 'Read session file'), err);
         return;
     end
     try
@@ -33,7 +33,7 @@ function session = readSession(sourceFile)
             'stamp', stampField(data), ...
             'values', values);
     catch err
-        mps.logWarning('解析会话文件', err);
+        mps.logWarning(mps.tr('解析会话文件', 'Parse session file'), err);
         session = struct([]);
     end
 end

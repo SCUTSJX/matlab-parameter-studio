@@ -20,8 +20,9 @@ function reportPath = compareRuns(dirA, dirB, outPath)
         outPath = fullfile(dirB, 'compare.html');
     end
     if ~isfolder(dirA) || ~isfolder(dirB)
-        error('mps:compareRuns:missingFolder', ...
-            '运行目录不存在：%s / %s', dirA, dirB);
+        error('mps:compareRuns:missingFolder', mps.tr( ...
+            '运行目录不存在：%s / %s', 'Run folder not found: %s / %s'), ...
+            dirA, dirB);
     end
     outDir = fileparts(outPath);
     if ~isempty(outDir) && ~isfolder(outDir)
@@ -119,16 +120,16 @@ function reportPath = compareRuns(dirA, dirB, outPath)
                 rel = maxAbs / max(ref, 1e-12);
             end
             if maxAbs == 0
-                status = '相同';
+                status = mps.tr('相同', 'Same');
             else
-                status = '有差异';
+                status = mps.tr('有差异', 'Different');
                 nDiffVars = nDiffVars + 1;
             end
         else
             if ~strcmp(clsA, clsB) || ~isequal(size(A), size(B))
-                status = '类型/大小不同';
+                status = mps.tr('类型/大小不同', 'Type/size differs');
             else
-                status = '非数值变量';
+                status = mps.tr('非数值变量', 'Non-numeric variable');
             end
         end
         wsDiffs(end+1) = struct('name', name, 'classA', clsA, ...
@@ -144,16 +145,20 @@ function reportPath = compareRuns(dirA, dirB, outPath)
     reportPath = outPath;
     fid = fopen(reportPath, 'w', 'n', 'UTF-8');
     if fid < 0
-        error('mps:compareRuns:cannotWrite', '无法写入：%s', reportPath);
+        error('mps:compareRuns:cannotWrite', mps.tr( ...
+            '无法写入：%s', 'Cannot write: %s'), reportPath);
     end
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
 
     stamp = datestr(now, 'yyyy-mm-dd HH:MM:SS');
     out = {};
     out{end+1} = '<!DOCTYPE html>';
-    out{end+1} = '<html lang="zh-CN"><head><meta charset="utf-8">';
+    out{end+1} = mps.tr( ...
+        '<html lang="zh-CN"><head><meta charset="utf-8">', ...
+        '<html lang="en"><head><meta charset="utf-8">');
     out{end+1} = '<meta name="viewport" content="width=device-width, initial-scale=1">';
-    out{end+1} = '<title>运行对比报告</title>';
+    out{end+1} = mps.tr('<title>运行对比报告</title>', ...
+        '<title>Run comparison report</title>');
     out{end+1} = '<style>';
     out{end+1} = 'body{font-family:"Microsoft YaHei","Segoe UI",Arial,sans-serif;margin:0;background:#f5f7fb;color:#172033;line-height:1.55;}';
     out{end+1} = '.wrap{max-width:1200px;margin:0 auto;padding:32px 24px 60px;}';
@@ -173,36 +178,52 @@ function reportPath = compareRuns(dirA, dirB, outPath)
     out{end+1} = 'figcaption{font-size:12px;color:#667085;margin-top:6px;}';
     out{end+1} = '.muted{color:#98a2b3;}';
     out{end+1} = '</style></head><body><div class="wrap">';
-    out{end+1} = '<h1>运行对比报告</h1>';
-    out{end+1} = sprintf('<div class="sub">A：%s<br>B：%s<br>生成时间：%s</div>', ...
+    out{end+1} = mps.tr('<h1>运行对比报告</h1>', ...
+        '<h1>Run comparison report</h1>');
+    out{end+1} = sprintf(mps.tr( ...
+        '<div class="sub">A：%s<br>B：%s<br>生成时间：%s</div>', ...
+        '<div class="sub">A: %s<br>B: %s<br>Generated: %s</div>'), ...
         htmlEscape(dirA), htmlEscape(dirB), stamp);
 
     out{end+1} = '<div class="cards">';
-    out{end+1} = sprintf('<div class="card"><div class="n">%d</div><div class="l">参数差异</div></div>', nChanged);
-    out{end+1} = sprintf('<div class="card"><div class="n">%d</div><div class="l">数值有差异的变量</div></div>', nDiffVars);
-    out{end+1} = sprintf('<div class="card"><div class="n">%d</div><div class="l">A 输出图</div></div>', numel(figA));
-    out{end+1} = sprintf('<div class="card"><div class="n">%d</div><div class="l">B 输出图</div></div>', numel(figB));
+    out{end+1} = sprintf(mps.tr( ...
+        '<div class="card"><div class="n">%d</div><div class="l">参数差异</div></div>', ...
+        '<div class="card"><div class="n">%d</div><div class="l">Parameter differences</div></div>'), nChanged);
+    out{end+1} = sprintf(mps.tr( ...
+        '<div class="card"><div class="n">%d</div><div class="l">数值有差异的变量</div></div>', ...
+        '<div class="card"><div class="n">%d</div><div class="l">Variables with numeric differences</div></div>'), nDiffVars);
+    out{end+1} = sprintf(mps.tr( ...
+        '<div class="card"><div class="n">%d</div><div class="l">A 输出图</div></div>', ...
+        '<div class="card"><div class="n">%d</div><div class="l">A figures</div></div>'), numel(figA));
+    out{end+1} = sprintf(mps.tr( ...
+        '<div class="card"><div class="n">%d</div><div class="l">B 输出图</div></div>', ...
+        '<div class="card"><div class="n">%d</div><div class="l">B figures</div></div>'), numel(figB));
     out{end+1} = '</div>';
 
     % Parameters table
-    out{end+1} = '<h2>参数对比</h2><div class="panel">';
+    out{end+1} = mps.tr('<h2>参数对比</h2><div class="panel">', ...
+        '<h2>Parameter comparison</h2><div class="panel">');
     if isempty(paramDiffs)
-        out{end+1} = '<p class="muted">两次运行都没有参数记录。</p>';
+        out{end+1} = mps.tr( ...
+            '<p class="muted">两次运行都没有参数记录。</p>', ...
+            '<p class="muted">Neither run has a parameter record.</p>');
     else
-        out{end+1} = '<table><thead><tr><th>参数</th><th>行 (A / B)</th><th>A 运行值</th><th>B 运行值</th><th>说明</th></tr></thead><tbody>';
+        out{end+1} = mps.tr( ...
+            '<table><thead><tr><th>参数</th><th>行 (A / B)</th><th>A 运行值</th><th>B 运行值</th><th>说明</th></tr></thead><tbody>', ...
+            '<table><thead><tr><th>Parameter</th><th>Line (A / B)</th><th>A run value</th><th>B run value</th><th>Note</th></tr></thead><tbody>');
         for k = 1:numel(paramDiffs)
             d = paramDiffs(k);
             rowClass = '';
             if d.changed, rowClass = ' class="changed"'; end
             if strcmp(d.only, 'A')
-                note = '仅 A 有';
+                note = mps.tr('仅 A 有', 'Only in A');
             elseif strcmp(d.only, 'B')
-                note = '仅 B 有';
+                note = mps.tr('仅 B 有', 'Only in B');
             elseif d.changed
                 note = sprintf('<span class="old">%s</span> → <span class="new">%s</span>', ...
                     htmlEscape(d.valueA), htmlEscape(d.valueB));
             else
-                note = '相同';
+                note = mps.tr('相同', 'Same');
             end
             out{end+1} = sprintf('<tr%s><td><code>%s</code></td><td>%s / %s</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
                 rowClass, htmlEscape(d.name), fmtLine(d.lineA), ...
@@ -214,11 +235,16 @@ function reportPath = compareRuns(dirA, dirB, outPath)
     out{end+1} = '</div>';
 
     % Workspace table
-    out{end+1} = '<h2>工作区变量对比</h2><div class="panel">';
+    out{end+1} = mps.tr('<h2>工作区变量对比</h2><div class="panel">', ...
+        '<h2>Workspace variable comparison</h2><div class="panel">');
     if isempty(common)
-        out{end+1} = '<p class="muted">没有同名的工作区变量。</p>';
+        out{end+1} = mps.tr( ...
+            '<p class="muted">没有同名的工作区变量。</p>', ...
+            '<p class="muted">No workspace variables with the same name.</p>');
     else
-        out{end+1} = '<table><thead><tr><th>变量</th><th>大小 (A/B)</th><th>状态</th><th>最大绝对差</th><th>RMS 差</th><th>相对差</th></tr></thead><tbody>';
+        out{end+1} = mps.tr( ...
+            '<table><thead><tr><th>变量</th><th>大小 (A/B)</th><th>状态</th><th>最大绝对差</th><th>RMS 差</th><th>相对差</th></tr></thead><tbody>', ...
+            '<table><thead><tr><th>Variable</th><th>Size (A/B)</th><th>Status</th><th>Max abs diff</th><th>RMS diff</th><th>Relative diff</th></tr></thead><tbody>');
         for k = 1:numel(wsDiffs)
             d = wsDiffs(k);
             out{end+1} = sprintf('<tr><td><code>%s</code></td><td>%s / %s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>', ...
@@ -228,36 +254,54 @@ function reportPath = compareRuns(dirA, dirB, outPath)
         out{end+1} = '</tbody></table>';
     end
     if ~isempty(onlyA)
-        out{end+1} = sprintf('<p class="muted">仅 A 有：%s</p>', htmlEscape(strjoin(onlyA, ', ')));
+        out{end+1} = sprintf(mps.tr( ...
+            '<p class="muted">仅 A 有：%s</p>', ...
+            '<p class="muted">Only in A: %s</p>'), ...
+            htmlEscape(strjoin(onlyA, ', ')));
     end
     if ~isempty(onlyB)
-        out{end+1} = sprintf('<p class="muted">仅 B 有：%s</p>', htmlEscape(strjoin(onlyB, ', ')));
+        out{end+1} = sprintf(mps.tr( ...
+            '<p class="muted">仅 B 有：%s</p>', ...
+            '<p class="muted">Only in B: %s</p>'), ...
+            htmlEscape(strjoin(onlyB, ', ')));
     end
     out{end+1} = '</div>';
 
     % Figures
-    out{end+1} = '<h2>输出图对比</h2><div class="panel"><div class="grid2">';
+    out{end+1} = mps.tr( ...
+        '<h2>输出图对比</h2><div class="panel"><div class="grid2">', ...
+        '<h2>Figure comparison</h2><div class="panel"><div class="grid2">');
     nFig = max(numel(assetsA), numel(assetsB));
     for k = 1:nFig
         out{end+1} = '<div>';
         if k <= numel(assetsA)
-            out{end+1} = sprintf('<figure><img src="%s" alt="A 图 %d"><figcaption>A · %s</figcaption></figure>', ...
+            out{end+1} = sprintf(mps.tr( ...
+                '<figure><img src="%s" alt="A 图 %d"><figcaption>A · %s</figcaption></figure>', ...
+                '<figure><img src="%s" alt="A figure %d"><figcaption>A · %s</figcaption></figure>'), ...
                 htmlEscape(relativePath(outDir, assetsA{k})), k, htmlEscape(figName(figA, k))); %#ok<AGROW>
         else
-            out{end+1} = '<p class="muted">（A 没有更多图）</p>';
+            out{end+1} = mps.tr( ...
+                '<p class="muted">（A 没有更多图）</p>', ...
+                '<p class="muted">(A has no more figures)</p>');
         end
         out{end+1} = '</div><div>';
         if k <= numel(assetsB)
-            out{end+1} = sprintf('<figure><img src="%s" alt="B 图 %d"><figcaption>B · %s</figcaption></figure>', ...
+            out{end+1} = sprintf(mps.tr( ...
+                '<figure><img src="%s" alt="B 图 %d"><figcaption>B · %s</figcaption></figure>', ...
+                '<figure><img src="%s" alt="B figure %d"><figcaption>B · %s</figcaption></figure>'), ...
                 htmlEscape(relativePath(outDir, assetsB{k})), k, htmlEscape(figName(figB, k))); %#ok<AGROW>
         else
-            out{end+1} = '<p class="muted">（B 没有更多图）</p>';
+            out{end+1} = mps.tr( ...
+                '<p class="muted">（B 没有更多图）</p>', ...
+                '<p class="muted">(B has no more figures)</p>');
         end
         out{end+1} = '</div>';
     end
     out{end+1} = '</div></div>';
 
-    out{end+1} = '<p class="muted">由 MATLAB Parameter Studio 生成 · mps.compareRuns</p>';
+    out{end+1} = mps.tr( ...
+        '<p class="muted">由 MATLAB Parameter Studio 生成 · mps.compareRuns</p>', ...
+        '<p class="muted">Generated by MATLAB Parameter Studio · mps.compareRuns</p>');
     out{end+1} = '</div></body></html>';
 
     for k = 1:numel(out)
@@ -296,7 +340,8 @@ function p = loadParams(dir)
     try
         raw = jsondecode(fileread(f));
     catch err
-        mps.logWarning('读取运行参数对比 JSON', err);
+        mps.logWarning(mps.tr('读取运行参数对比 JSON', ...
+            'Read run parameter comparison JSON'), err);
         return;
     end
     if ~isstruct(raw) || isempty(raw)
@@ -394,7 +439,8 @@ function S = loadWorkspace(runDir)
     try
         info = whos('-file', f);
     catch err
-        mps.logWarning('读取对比工作区变量列表', err);
+        mps.logWarning(mps.tr('读取对比工作区变量列表', ...
+            'Read comparison workspace variable list'), err);
         return;
     end
     keep = {};
@@ -418,7 +464,8 @@ function S = loadWorkspace(runDir)
         S = load(f, keep{:});
     catch err
         S = struct();
-        mps.logWarning('读取对比工作区变量', err);
+        mps.logWarning(mps.tr('读取对比工作区变量', ...
+            'Read comparison workspace variables'), err);
     end
 end
 
@@ -439,7 +486,7 @@ end
 
 % -------------------------------------------------------------------------
 function name = figName(figs, k)
-    name = sprintf('图 %d', k);
+    name = mps.tr('图 %d', 'Figure %d', k);
     if k <= numel(figs)
         [~, base] = fileparts(figs{k});
         name = base;
@@ -456,7 +503,8 @@ function assets = copyFigureSet(figs, assetDir, prefix)
             assets{end+1} = target; %#ok<AGROW>
         catch err
             assets{end+1} = figs{k}; %#ok<AGROW>
-            mps.logWarning('复制对比图窗', err);
+            mps.logWarning(mps.tr('复制对比图窗', ...
+                'Copy comparison figures'), err);
         end
     end
 end

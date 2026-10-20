@@ -23,7 +23,8 @@ function writeSession(sourceFile, params, stamp)
     fid = fopen(target, 'w', 'n', 'UTF-8');
     if fid < 0
         error('mps:writeSession:cannotWrite', ...
-            '无法写入会话文件：%s', target);
+            mps.tr('无法写入会话文件：%s', ...
+            'Cannot write session file: %s'), target);
     end
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
     fprintf(fid, '%s', jsonencode(data));

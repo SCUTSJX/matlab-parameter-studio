@@ -16,7 +16,7 @@ function presets = readPresets(sourceFile)
     try
         data = jsondecode(fileread(p));
     catch err
-        mps.logWarning('读取参数集', err);
+        mps.logWarning(mps.tr('读取参数集', 'Read parameter presets'), err);
         return;
     end
     try
@@ -42,7 +42,7 @@ function presets = readPresets(sourceFile)
                 'values', normalizeValues(item)); %#ok<AGROW>
         end
     catch err
-        mps.logWarning('解析参数集', err);
+        mps.logWarning(mps.tr('解析参数集', 'Parse parameter presets'), err);
         presets = emptyPresets();
     end
 end

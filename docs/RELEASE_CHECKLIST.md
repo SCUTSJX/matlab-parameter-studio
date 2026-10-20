@@ -27,6 +27,8 @@ timestamped log under `logs/`. For an environment-only check use
 5. Run a small sweep and a project sweep; close figures and check the output
    folder.
 6. Close the app and verify no MATLAB worker processes remain.
+7. Launch `MatlabParameterStudioEnglish`, open the demo, run it, and confirm
+   the English UI and HTML report. Relaunch the Chinese UI once.
 
 ## Documentation
 
