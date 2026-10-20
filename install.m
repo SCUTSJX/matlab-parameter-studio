@@ -13,9 +13,9 @@ function install(varargin)
         end
     end
 
-    if verLessThan('matlab', '9.12')   % R2022a
+    if verLessThan('matlab', '9.15')   % R2023b
         warning('mps:install:oldMatlab', ...
-            ['MATLAB Parameter Studio targets R2022a or newer. ' ...
+            ['MATLAB Parameter Studio targets R2023b or newer. ' ...
              'This MATLAB release may not support every UI feature.']);
     end
 

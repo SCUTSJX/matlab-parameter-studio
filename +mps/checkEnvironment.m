@@ -20,9 +20,9 @@ function info = checkEnvironment(root)
     info.tempWritable = false;
     info.messages = {};
 
-    if verLessThan('matlab', '9.12')
+    if verLessThan('matlab', '9.15')
         info.messages{end+1} = ...
-            'MATLAB R2022a or newer is recommended.';
+            'MATLAB R2023b or newer is required.';
     end
     if ~info.demoExists
         info.messages{end+1} = 'Demo script is missing.';
@@ -59,5 +59,5 @@ function info = checkEnvironment(root)
             'Parallel Computing Toolbox not found; parallel sweep and background runs are disabled.';
     end
     info.ok = info.demoExists && info.tempWritable && ...
-        isempty(info.missing) && ~verLessThan('matlab', '9.12');
+        isempty(info.missing) && ~verLessThan('matlab', '9.15');
 end

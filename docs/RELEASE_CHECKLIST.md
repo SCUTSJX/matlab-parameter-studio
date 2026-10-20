@@ -33,6 +33,7 @@ timestamped log under `logs/`. For an environment-only check use
 - `docs/screenshot.png` and `docs/screenshot_annotations.png` were generated
   with `docs/make_screenshots.m`;
 - screenshots contain no user home directory or real project path;
+- `README.md` is the English default and `README.zh-CN.md` is current;
 - README usage and test commands match the release;
 - `+mps/version.m` is bumped.
 
