@@ -171,6 +171,11 @@ classdef SweepRunner < handle
             set(groot, 'defaultFigureVisible', 'off');
             figCleaner = onCleanup(@() set(groot, ...
                 'defaultFigureVisible', oldVis)); %#ok<NASGU>
+            % Per-scenario seeding below reseeds the client's global stream.
+            % Restore it when the sweep ends, matching the parallel path
+            % where seeding happens on workers only.
+            oldRng = rng;
+            rngCleaner = onCleanup(@() rng(oldRng)); %#ok<NASGU>
 
             for k = 1:total
                 if obj.ShouldCancel()
