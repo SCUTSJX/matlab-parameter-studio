@@ -17,6 +17,12 @@ classdef ProjectRunExecutor < handle
         KeepFigures = false
         MaxVariableMB = 100
         MaxTotalMB = 512
+        SaveFigFiles = false
+        FigureResolution = 150
+        OutDir = ''
+        CopyProjectResults = true
+        SlimWorkspace = false
+        SlimNames = {}
         Progress = @(message) []
     end
 
@@ -80,7 +86,8 @@ classdef ProjectRunExecutor < handle
 
             wrapper = fullfile(shadowRoot, 'mps_project_wrapper.m');
             writeWrapper(wrapper, relativeEntry);
-            keepScript = fullfile(obj.makeOutputDir(), 'run_script.m');
+            outDir = obj.makeOutputDir();
+            keepScript = fullfile(outDir, 'run_script.m');
 
             obj.Progress('运行项目入口...');
             oldVis = get(groot, 'defaultFigureVisible');
@@ -88,9 +95,15 @@ classdef ProjectRunExecutor < handle
             figCleaner = onCleanup(@() set(groot, ...
                 'defaultFigureVisible', oldVis)); %#ok<NASGU>
 
-            r = mps.runScript(obj.EntryFile, wrapper, fileparts(keepScript), ...
+            r = mps.runScript(obj.EntryFile, wrapper, outDir, ...
                 'MaxVariableMB', obj.MaxVariableMB, ...
-                'MaxTotalMB', obj.MaxTotalMB);
+                'MaxTotalMB', obj.MaxTotalMB, ...
+                'SaveFigFiles', obj.SaveFigFiles, ...
+                'FigureResolution', obj.FigureResolution);
+            if obj.SlimWorkspace
+                r.workspaceData = slimWorkspaceData( ...
+                    r.workspaceData, obj.SlimNames);
+            end
             clear figCleaner;
             obj.handleFigures(r);
 
@@ -107,10 +120,10 @@ classdef ProjectRunExecutor < handle
             % Preserve the project's own result folder (metrics.csv,
             % summary.mat, optional experiment plots) in the run directory.
             shadowResults = fullfile(shadowRoot, '运行结果');
-            if isfolder(shadowResults)
+            if obj.CopyProjectResults && isfolder(shadowResults)
                 try
                     copyProjectTree(shadowResults, ...
-                        fullfile(fileparts(keepScript), 'project_results'));
+                        fullfile(outDir, 'project_results'));
                 catch
                 end
             end
@@ -119,9 +132,9 @@ classdef ProjectRunExecutor < handle
             r.log = replaceShadowRoot(r.log, shadowRoot, projectRoot);
 
             obj.Progress('生成 HTML 报告...');
-            reportPath = mps.writeReport(fileparts(keepScript), ...
+            reportPath = mps.writeReport(outDir, ...
                 obj.EntryFile, obj.Params, r);
-            out = struct('run', r, 'outDir', fileparts(keepScript), ...
+            out = struct('run', r, 'outDir', outDir, ...
                 'reportPath', reportPath, 'params', obj.Params, ...
                 'shadowRoot', shadowRoot);
         end
@@ -129,6 +142,13 @@ classdef ProjectRunExecutor < handle
 
     methods (Access = private)
         function outDir = makeOutputDir(obj)
+            if ~isempty(obj.OutDir)
+                outDir = char(obj.OutDir);
+                if ~isfolder(outDir)
+                    mkdir(outDir);
+                end
+                return;
+            end
             stamp = datestr(now, 'yyyymmdd_HHMMSS');
             root = fullfile(fileparts(obj.EntryFile), 'parameter_studio_runs');
             if ~isfolder(root)
@@ -157,6 +177,26 @@ classdef ProjectRunExecutor < handle
                     end
                 end
                 r.figureHandles = gobjects(0);
+            end
+        end
+    end
+end
+
+% -------------------------------------------------------------------------
+function slim = slimWorkspaceData(ws, names)
+    slim = struct();
+    if ~isstruct(ws)
+        return;
+    end
+    for k = 1:numel(names)
+        name = char(names{k});
+        if isempty(name) || strcmp(name, '(无)')
+            continue;
+        end
+        if isfield(ws, name)
+            v = ws.(name);
+            if (isnumeric(v) || islogical(v)) && isvector(v)
+                slim.(name) = v;
             end
         end
     end

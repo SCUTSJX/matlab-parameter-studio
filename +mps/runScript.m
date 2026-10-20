@@ -15,6 +15,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
 
     maxVariableMB = 100;
     maxTotalMB = 512;
+    saveFigFiles = true;
+    figureResolution = 150;
     for k = 1:2:numel(varargin)
         if k + 1 > numel(varargin), break; end
         switch lower(char(varargin{k}))
@@ -22,6 +24,10 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
                 maxVariableMB = varargin{k+1};
             case 'maxtotalmb'
                 maxTotalMB = varargin{k+1};
+            case 'savefigfiles'
+                saveFigFiles = logical(varargin{k+1});
+            case 'figureresolution'
+                figureResolution = varargin{k+1};
         end
     end
 
@@ -113,7 +119,7 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
         pngPath = fullfile(figDir, sprintf('fig_%02d.png', k));
         wrote = false;
         try
-            exportgraphics(f, pngPath, 'Resolution', 150, ...
+            exportgraphics(f, pngPath, 'Resolution', figureResolution, ...
                 'BackgroundColor', 'white');
             wrote = true;
         catch
@@ -124,11 +130,13 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             end
         end
         figFile = '';
-        try
-            figFile = fullfile(figDir, sprintf('fig_%02d.fig', k));
-            savefig(f, figFile);
-        catch
-            figFile = '';
+        if saveFigFiles
+            try
+                figFile = fullfile(figDir, sprintf('fig_%02d.fig', k));
+                savefig(f, figFile);
+            catch
+                figFile = '';
+            end
         end
         if wrote
             title = '';

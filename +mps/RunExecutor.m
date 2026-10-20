@@ -17,6 +17,8 @@ classdef RunExecutor < handle
         KeepFigures = false
         MaxVariableMB = 100
         MaxTotalMB = 512
+        SaveFigFiles = false
+        FigureResolution = 150
         Progress = @(message) []
     end
 
@@ -69,7 +71,9 @@ classdef RunExecutor < handle
 
             r = mps.runScript(obj.SourceFile, tempScript, outDir, ...
                 'MaxVariableMB', obj.MaxVariableMB, ...
-                'MaxTotalMB', obj.MaxTotalMB);
+                'MaxTotalMB', obj.MaxTotalMB, ...
+                'SaveFigFiles', obj.SaveFigFiles, ...
+                'FigureResolution', obj.FigureResolution);
             clear figVisCleaner;
             obj.handleFigures(r);
 

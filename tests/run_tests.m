@@ -16,7 +16,9 @@ function run_tests()
     oldVis = get(groot, 'defaultFigureVisible');
     set(groot, 'defaultFigureVisible', 'off');
     beforeFigs = findall(groot, 'Type', 'figure');
+    hadPool = ~isempty(gcp('nocreate'));
     cleanupObj = onCleanup(@() cleanupTestFigures(oldVis, beforeFigs)); %#ok<NASGU>
+    poolCleanup = onCleanup(@() stopTestPool(hadPool)); %#ok<NASGU>
 
     demo = fullfile(root, 'demo', 'demo_simulation.m');
     assert(isfile(demo), 'demo script missing');
@@ -844,6 +846,20 @@ function run_tests()
     fprintf('  app UI: ok\n');
 
     fprintf('ALL TESTS PASSED\n');
+end
+
+% -------------------------------------------------------------------------
+function stopTestPool(hadPool)
+    if hadPool
+        return;   % do not stop a pool the caller already had open
+    end
+    try
+        pool = gcp('nocreate');
+        if ~isempty(pool)
+            delete(pool);
+        end
+    catch
+    end
 end
 
 % -------------------------------------------------------------------------

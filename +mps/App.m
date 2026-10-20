@@ -15,6 +15,8 @@ classdef App < handle
         Results
         MaxVariableMB = 100
         MaxTotalMB = 512
+        SaveFigFiles = false
+        FigureResolution = 150
         RunTimeoutSeconds = 0   % 0 = no timeout
     end
 
@@ -952,6 +954,8 @@ classdef App < handle
                 end
                 executor.MaxVariableMB = app.MaxVariableMB;
                 executor.MaxTotalMB = app.MaxTotalMB;
+                executor.SaveFigFiles = app.SaveFigFiles;
+                executor.FigureResolution = app.FigureResolution;
                 executor.Progress = @(message) setProgress(d, message);
                 out = executor.run();
                 r = out.run;
@@ -1049,12 +1053,14 @@ classdef App < handle
                         ~strcmpi(app.EntryFile, app.SourceFile))
                     app.BackgroundFuture = parfeval(pool, ...
                         @mps.backgroundProjectRun, 1, app.SourceFile, ...
-                        app.EntryFile, app.Params, ...
-                        app.MaxVariableMB, app.MaxTotalMB);
+                        app.EntryFile, app.Params, app.MaxVariableMB, ...
+                        app.MaxTotalMB, app.SaveFigFiles, ...
+                        app.FigureResolution);
                 else
                     app.BackgroundFuture = parfeval(pool, ...
                         @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
-                        app.MaxVariableMB, app.MaxTotalMB);
+                        app.MaxVariableMB, app.MaxTotalMB, ...
+                        app.SaveFigFiles, app.FigureResolution);
                 end
                 app.BackgroundTimer = timer( ...
                     'ExecutionMode', 'fixedSpacing', 'Period', 0.5, ...
@@ -1611,6 +1617,8 @@ classdef App < handle
                     app.KeepFiguresCheck.Value);
                 runner.MaxVariableMB = app.MaxVariableMB;
                 runner.MaxTotalMB = app.MaxTotalMB;
+                runner.SaveFigFiles = app.SaveFigFiles;
+                runner.FigureResolution = app.FigureResolution;
                 runner.MaxScenarios = maxScenarios;
                 runner.Parallel = logical(parallel);
                 runner.Progress = @(fraction, message) ...

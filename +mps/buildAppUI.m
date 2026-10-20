@@ -94,7 +94,7 @@ function h = buildAppUI(cb)
 
     fg = uigridlayout(lg, [1 7]);
     fg.Layout.Row = 1;
-    fg.ColumnWidth = {110, '1x', 130, 82, 84, 84, 100};
+    fg.ColumnWidth = {104, '1x', 120, 100, 80, 80, 92};
     fg.Padding = [0 0 0 0];
     fg.ColumnSpacing = 6;
 

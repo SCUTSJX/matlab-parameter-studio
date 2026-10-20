@@ -23,6 +23,8 @@ classdef SweepRunner < handle
         KeepFigures = false
         MaxVariableMB = 100
         MaxTotalMB = 512
+        SaveFigFiles = false
+        FigureResolution = 150
         MaxScenarios = 24
         Parallel = false
         Progress = @(fraction, message) []
@@ -147,7 +149,9 @@ classdef SweepRunner < handle
                     'NeutralizeCloseAll', true);
                 r = mps.runScript(obj.SourceFile, tempScript, runDir, ...
                     'MaxVariableMB', obj.MaxVariableMB, ...
-                    'MaxTotalMB', obj.MaxTotalMB);
+                    'MaxTotalMB', obj.MaxTotalMB, ...
+                    'SaveFigFiles', obj.SaveFigFiles, ...
+                    'FigureResolution', obj.FigureResolution);
                 try
                     if ~isfile(keepScript) && ...
                             ~strcmpi(tempScript, keepScript)
@@ -199,7 +203,8 @@ classdef SweepRunner < handle
                 futures{k} = parfeval(pool, @mps.runSweepScenario, 1, ...
                     obj.SourceFile, obj.Params, obj.ActiveIdx, ...
                     scenarios(k).values, runDir, false, obj.XName, ...
-                    obj.YNames, obj.MaxVariableMB, obj.MaxTotalMB);
+                    obj.YNames, obj.MaxVariableMB, obj.MaxTotalMB, ...
+                    obj.SaveFigFiles, obj.FigureResolution);
             end
             futureArray = [futures{:}];
 
