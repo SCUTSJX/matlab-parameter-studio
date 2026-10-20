@@ -9,9 +9,13 @@ function [params, stats] = applyPreset(params, preset)
 %       3. unique name
 %
 %   For every match the preset's use / newValue / locked state is applied.
-%   A locked entry always keeps the script's original value.
+%   A locked entry always keeps the script's original value.  Values that
+%   are not safe numeric expressions are skipped and counted in
+%   stats.invalid, so a shared preset file cannot inject code into the
+%   generated script.
 
-    stats = struct('matched', 0, 'ambiguous', 0, 'unmatched', 0);
+    stats = struct('matched', 0, 'ambiguous', 0, 'unmatched', 0, ...
+        'invalid', 0);
     if isempty(params) || ~isstruct(preset) || ~isfield(preset, 'values')
         return;
     end
@@ -64,6 +68,11 @@ function [params, stats] = applyPreset(params, preset)
         else
             params(target).locked = false;
             if ~isempty(v.newValue)
+                [okValue, ~] = mps.validateValue(v.newValue);
+                if ~okValue
+                    stats.invalid = stats.invalid + 1;
+                    continue;
+                end
                 params(target).newValue = v.newValue;
             end
         end

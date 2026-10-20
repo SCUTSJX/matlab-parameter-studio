@@ -52,6 +52,7 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
         p = params(k);
         if ~isfield(p, 'use') || ~p.use, continue; end
         if isfield(p, 'locked') && p.locked, continue; end
+        if isfield(p, 'manual') && logical(p.manual), continue; end
         oldText = strtrim(p.value);
         newText = strtrim(p.newValue);
         if strcmp(oldText, newText), continue; end
@@ -60,10 +61,11 @@ function [outText, applied] = applyEdits(sourceFile, params, outputPath, varargi
                 '参数 %s 的新值为空，已跳过。', p.name);
             continue;
         end
-        if any(newText == sprintf('\n')) || any(newText == sprintf('\r')) || ...
-                contains(newText, ';') || contains(newText, '%')
+        [okValue, ~] = mps.validateValue(newText);
+        if ~okValue
             warning('mps:applyEdits:badValue', ...
-                '参数 %s 的新值不能包含换行、分号或注释：%s', p.name, newText);
+                '参数 %s 的新值不是安全的数值表达式，已跳过：%s', ...
+                p.name, newText);
             continue;
         end
         edits(end+1) = struct('line', p.line, 'start', p.colStart, ...
