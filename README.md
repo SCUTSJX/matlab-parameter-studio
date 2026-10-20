@@ -371,6 +371,12 @@ install.m                    安装/加入 MATLAB path
 +mps/ParameterTableController.m 参数表/选择/批量修改/撤销/会话
 +mps/ResultsController.m     结果图/工作区/绘图/CSV 控制器
 +mps/SaveController.m        保存调参脚本/导出参数 JSON
++mps/PresetController.m      参数集保存/载入/删除
++mps/AnnotationController.m  AI 注释模板/导入/清空
++mps/SweepController.m       批量扫描对话框/执行/进度
++mps/RunHistoryController.m  运行历史浏览/载入参数
++mps/ProjectController.m     项目入口/多文件扫描/状态
++mps/ManualParamController.m 手动参数添加/编辑
 +mps/scan.m                  .m 扫描器（参数识别与打分）
 +mps/applyEdits.m            替换参数、生成运行副本
 +mps/runScript.m             运行并抓取图窗/工作区/日志
@@ -461,6 +467,7 @@ mps.preflight()
 - 对于一个文件里名字重复的参数（例如两个 `validation_noise.switch_time`），表格里会显示为同名不同值的两行，请结合“行”列区分。
 - 手动参数会作为 `name = value;` 插到调参脚本最前面；如果脚本后面又给同名变量赋值，手动值会被覆盖。这也会让报错行号相对原文件偏移，函数文件不支持手动参数。
 - 会话文件 `*_session.json` 和手动参数文件 `*_manual.json` 是本地状态，已加入 `.gitignore`；删除它们即可回到脚本原值。
+- 生成的 `*_tuned.m`、`*_params.json` 默认也被 `.gitignore` 忽略；如果确实要把某次调参结果纳入版本管理，使用 `git add -f`。
 - 后台运行会把工作区传回界面，仍受 `MaxVariableMB` / `MaxTotalMB` 限制；并行扫参只把选中的 X/Y 曲线带回界面，完整工作区在各自的 `run_XX/workspace.mat` 中。
 - 项目模式可以扫描多个 `.m` 文件并一起改参；项目代码/输入会同步到临时副本，结果目录不入副本。项目模式暂不支持手动参数。
 
