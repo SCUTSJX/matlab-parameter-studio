@@ -23,7 +23,6 @@ classdef ParameterTableController < handle
         SourceFile = ''
         SourceStamp = struct()
         VisibleIdx = []
-        SelectedVisibleRows = []
         UndoStack = {}
         RedoStack = {}
         MaxUndo = 50
@@ -84,7 +83,6 @@ classdef ParameterTableController < handle
 
         function clearSelection(obj)
             obj.SelectedParams = [];
-            obj.SelectedVisibleRows = [];
         end
 
         function tf = needsSave(obj)
@@ -333,7 +331,6 @@ classdef ParameterTableController < handle
                 obj.updateLockButton();
                 return;
             end
-            obj.SelectedVisibleRows = rows(:)';
             obj.SelectedParams = obj.VisibleIdx(rows);
             obj.updateLockButton();
 
@@ -345,6 +342,9 @@ classdef ParameterTableController < handle
                 return;
             end
             lineNo = obj.Params(idx).line;
+            % The parameter table is a snapshot; the file may have shrunk
+            % since the scan, so clamp the line into the current range.
+            lineNo = min(max(lineNo, 1), numel(lines));
             lo = max(1, lineNo - 2);
             hi = min(numel(lines), lineNo + 2);
             preview = cell(hi - lo + 1, 1);
@@ -404,12 +404,22 @@ classdef ParameterTableController < handle
             if isempty(obj.Params)
                 return;
             end
+            paramsSnapshot = obj.Params;
             dlg = mps.BulkEditDialog(obj.Params, obj.SelectedParams, ...
                 obj.VisibleIdx);
             uiwait(dlg.UIFigure);
             result = dlg.Result;
             delete(dlg);
             if ~isstruct(result) || ~isfield(result, 'op')
+                return;
+            end
+            % The dialog is non-modal: undo, presets or another file may
+            % have replaced the table while it was open.  Indices computed
+            % from the old snapshot would silently edit wrong parameters.
+            if ~isequal(obj.Params, paramsSnapshot)
+                obj.alert(['对话框打开期间参数表已发生变化，' ...
+                    '本次批量修改已取消，请重新操作。'], ...
+                    '参数已变化', 'Icon', 'warning');
                 return;
             end
 
@@ -557,7 +567,6 @@ classdef ParameterTableController < handle
             else
                 visibleRows = [];
             end
-            obj.SelectedVisibleRows = visibleRows(:)';
             try
                 if isempty(visibleRows)
                     obj.Table.Selection = [];
