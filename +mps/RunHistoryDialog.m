@@ -414,8 +414,10 @@ classdef RunHistoryDialog < handle
             for k = removeIdx
                 try
                     rmdir(dlg.Runs(k).path, 's');
-                catch
+                catch err
                     failed = failed + 1;
+                    mps.logWarning(sprintf('删除旧运行 %s', ...
+                        dlg.Runs(k).name), err);
                 end
             end
             dlg.refresh();
@@ -584,7 +586,8 @@ classdef RunHistoryDialog < handle
             catch
                 try
                     mps.openPath(target);
-                catch
+                catch err
+                    mps.logWarning('打开对比报告', err);
                 end
             end
         end

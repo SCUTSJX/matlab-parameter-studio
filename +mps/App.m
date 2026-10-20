@@ -54,17 +54,11 @@ classdef App < handle
         IsFunctionFile = false
         Save
         TableCtl
+        SourceCtl
         Presets = struct([])
         PresetsFile = ''
         Busy = false
-        BackgroundFuture
-        BackgroundTimer
-        BackgroundDialog
-        BackgroundOldHV
-        BackgroundCanceled = false
-        BackgroundTimedOut = false
-        BackgroundStartedAt = 0
-        BackgroundCreatedPool = false
+        BackgroundMgr
         SweepStartedAt = 0
     end
 
@@ -77,7 +71,20 @@ classdef App < handle
                     visible = char(varargin{k+1});
                 end
             end
+            try
+                mps.cleanupShadowProjects(7);
+            catch err
+                mps.logWarning('清理旧影子目录', err);
+            end
             app.createUI();
+            app.SourceCtl = mps.SourceController(app, app.TableCtl);
+            app.SourceCtl.RefreshFcn = @() app.refreshTableView();
+            app.SourceCtl.StatusFcn = @(message) app.setStatusText(message);
+            app.BackgroundMgr = mps.BackgroundRunManager(app.UIFigure);
+            app.BackgroundMgr.ProgressFcn = ...
+                @(message) app.backgroundProgress(message);
+            app.BackgroundMgr.FinishedFcn = ...
+                @(out, message) app.backgroundFinished(out, message);
             if strcmpi(visible, 'off')
                 app.UIFigure.Visible = 'off';
             end
@@ -87,13 +94,15 @@ classdef App < handle
         function delete(app)
             try
                 app.cancelBackgroundRun();
-            catch
+            catch err
+                mps.logWarning('关闭时取消后台运行', err);
             end
             try
                 if app.TableCtl.needsSave()
                     app.saveSession();
                 end
-            catch
+            catch err
+                mps.logWarning('关闭时保存会话', err);
             end
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                 delete(app.UIFigure);
@@ -191,7 +200,8 @@ classdef App < handle
                             anns = candidate;
                             annFile = sidecar;
                         end
-                    catch
+                    catch err
+                        mps.logWarning('读取参数注释文件', err);
                     end
                 end
             end
@@ -230,7 +240,8 @@ classdef App < handle
                     else
                         try
                             delete(mps.sessionPath(filePath));
-                        catch
+                        catch err
+                            mps.logWarning('删除过期会话', err);
                         end
                         sessionNote = '；源文件已变化，未恢复上次修改';
                     end
@@ -302,6 +313,26 @@ classdef App < handle
         function setParam(app, name, value)
             %SETPARAM Set a parameter by name (used by tests and automation).
             app.TableCtl.setParam(name, value);
+        end
+
+        function refreshTableView(app)
+            %REFRESHTABLEVIEW Public bridge for controllers.
+            app.refreshTable();
+        end
+
+        function setStatusText(app, message)
+            %SETSTATUSTEXT Public bridge for controllers.
+            app.StatusLabel.Text = char(message);
+        end
+
+        function backgroundProgress(app, message)
+            %BACKGROUNDPROGRESS Public bridge for BackgroundRunManager.
+            app.setBackgroundProgress(message);
+        end
+
+        function backgroundFinished(app, out, message)
+            %BACKGROUNDFINISHED Public bridge for BackgroundRunManager.
+            app.finishBackgroundRun(out, message);
         end
 
         function undoLastEdit(app)
@@ -609,45 +640,25 @@ classdef App < handle
 
         function loadProjectInternal(app, entryFile)
             %LOADPROJECTINTERNAL Scan all .m files under the entry folder.
-            entryFile = char(entryFile);
-            if ~isfile(entryFile)
-                uialert(app.UIFigure, sprintf('入口脚本不存在：\n%s', entryFile), ...
-                    '打开项目失败', 'Icon', 'error');
-                return;
-            end
-            try
-                p = mps.scanProject(fileparts(entryFile));
-            catch err
-                uialert(app.UIFigure, err.message, '项目扫描失败', ...
+            session = mps.ProjectSession.load(entryFile);
+            if ~session.ok
+                uialert(app.UIFigure, session.error, '打开项目失败', ...
                     'Icon', 'error');
                 return;
             end
-            if isempty(p)
-                uialert(app.UIFigure, ...
-                    '项目里没有识别到可调参数。请确认入口脚本所在目录下有 .m 文件。', ...
-                    '没有参数', 'Icon', 'warning');
-                return;
-            end
-
-            raw = fileread(entryFile);
-            raw = strrep(raw, sprintf('\r\n'), sprintf('\n'));
-            raw = strrep(raw, sprintf('\r'), sprintf('\n'));
-            lines = regexp(raw, '\n', 'split');
-            if ~isempty(lines) && isempty(lines{end})
-                lines(end) = [];
-            end
-
+            entryFile = session.entryFile;
+            p = session.params;
             app.SourceFile = entryFile;
             app.EntryFile = entryFile;
-            app.ProjectRoot = fileparts(entryFile);
+            app.ProjectRoot = session.projectRoot;
             app.ProjectMode = true;
-            app.ProjectStamp = mps.projectStamp(app.ProjectRoot).signature;
+            app.ProjectStamp = session.projectStamp;
             app.IsFunctionFile = false;
-            app.SourceLines = lines;
+            app.SourceLines = session.lines;
             app.Params = p;
             app.LastAnnotations = struct([]);
             app.AnnotationFile = '';
-            app.SourceStamp = mps.sourceStamp(entryFile);
+            app.SourceStamp = session.sourceStamp;
             app.TableCtl.setSource(entryFile, app.SourceStamp);
             app.TableCtl.RecommendedMinScore = 5;
             app.TableCtl.resetHistory();
@@ -685,20 +696,7 @@ classdef App < handle
             app.ExportCsvButton.Enable = 'off';
             app.refreshTable();
             labels = app.FileFilterDrop.Items(2:end);
-            defaultLabel = '';
-            patterns = {'catalog', 'config', 'params', 'parameters', ...
-                'setup', 'values'};
-            for k = 1:numel(labels)
-                for j = 1:numel(patterns)
-                    if contains(lower(labels{k}), patterns{j})
-                        defaultLabel = labels{k};
-                        break;
-                    end
-                end
-                if ~isempty(defaultLabel)
-                    break;
-                end
-            end
+            defaultLabel = mps.ProjectSession.defaultFilter(labels);
             if ~isempty(defaultLabel)
                 app.FileFilterDrop.Value = defaultLabel;
                 app.refreshTable();
@@ -787,86 +785,17 @@ classdef App < handle
 
         function changed = sourceChanged(app)
             %SOURCECHANGED True when the file changed after it was scanned.
-            changed = false;
-            if app.ProjectMode && ~isempty(app.ProjectRoot)
-                try
-                    changed = ~strcmp(mps.projectStamp(app.ProjectRoot).signature, ...
-                        app.ProjectStamp);
-                catch
-                    changed = true;
-                end
-                return;
-            end
-            if isempty(app.SourceFile) || isempty(fieldnames(app.SourceStamp))
-                return;
-            end
-            try
-                current = mps.sourceStamp(app.SourceFile);
-                changed = ~mps.sameSourceStamp(app.SourceStamp, current);
-            catch
-                changed = true;
-            end
+            changed = app.SourceCtl.sourceChanged();
         end
 
         function ok = ensureSourceCurrent(app, actionLabel)
             %ENSURESOURCECURRENT Ask before using stale line/column positions.
-            ok = true;
-            if ~app.sourceChanged()
-                return;
-            end
-            if ~strcmp(app.UIFigure.Visible, 'on')
-                app.StatusLabel.Text = sprintf( ...
-                    '源文件已被外部修改，无法%s；请先重新扫描。', actionLabel);
-                ok = false;
-                return;
-            end
-            choice = uiconfirm(app.UIFigure, sprintf( ...
-                ['源文件在扫描后被外部修改了。\n\n' ...
-                 '继续%s可能把值写到旧的行号位置。建议先重新扫描并保留修改。'], ...
-                actionLabel), '源文件已变化', ...
-                'Options', {'重新扫描并保留修改', '仍然继续', '取消'}, ...
-                'DefaultOption', 1, 'CancelOption', 3);
-            switch choice
-                case '重新扫描并保留修改'
-                    app.rescanKeepingEdits();
-                case '仍然继续'
-                    % The user explicitly accepts the stale positions.
-                otherwise
-                    ok = false;
-            end
+            ok = app.SourceCtl.ensureSourceCurrent(actionLabel);
         end
 
         function rescanKeepingEdits(app)
             %RESCANKEEPINGEDITS Re-scan and map old edits to the new table.
-            if isempty(app.SourceFile)
-                return;
-            end
-            oldParams = app.Params;
-            oldAnnotations = app.LastAnnotations;
-            oldAnnotationFile = app.AnnotationFile;
-            try
-                delete(mps.sessionPath(app.SourceFile));
-            catch
-            end
-            if app.ProjectMode
-                app.loadProjectInternal(app.SourceFile);
-            else
-                app.loadFile(app.SourceFile, 'RestoreSession', false);
-            end
-            preset = struct('name', '重扫前修改', ...
-                'values', mps.paramsToValues(oldParams));
-            [app.Params, stats] = mps.applyPreset(app.Params, preset);
-            if ~isempty(oldAnnotations)
-                [app.Params, ~] = mps.applyAnnotations( ...
-                    app.Params, oldAnnotations);
-                app.LastAnnotations = oldAnnotations;
-                app.AnnotationFile = oldAnnotationFile;
-            end
-            app.TableCtl.markDirty();
-            app.refreshTable();
-            app.StatusLabel.Text = sprintf( ...
-                '已重新扫描并保留修改：匹配 %d，重名跳过 %d，未匹配 %d。', ...
-                stats.matched, stats.ambiguous, stats.unmatched);
+            app.SourceCtl.rescanKeepingEdits();
         end
 
         function onHelp(~)
@@ -875,27 +804,7 @@ classdef App < handle
         end
 
         function onRescan(app)
-            if isempty(app.SourceFile)
-                return;
-            end
-            if any([app.Params.isChanged])
-                choice = uiconfirm(app.UIFigure, ...
-                    '重新扫描会丢弃当前修改的新值。是否继续？', ...
-                    '重新扫描', 'Options', {'继续', '取消'}, ...
-                    'DefaultOption', 2, 'CancelOption', 2);
-                if ~strcmp(choice, '继续')
-                    return;
-                end
-            end
-            try
-                delete(mps.sessionPath(app.SourceFile));
-            catch
-            end
-            if app.ProjectMode
-                app.loadProjectInternal(app.SourceFile);
-            else
-                app.loadFile(app.SourceFile, 'RestoreSession', false);
-            end
+            app.SourceCtl.rescanDiscardingEdits();
         end
 
         function onRun(app)
@@ -1017,138 +926,32 @@ classdef App < handle
                 return;
             end
             app.setBusy(true);
-            if strcmp(app.UIFigure.Visible, 'on')
-                d = uiprogressdlg(app.UIFigure, ...
-                    'Title', '后台运行', 'Message', '准备...', ...
-                    'Indeterminate', 'on', 'Cancelable', 'on', ...
-                    'CancelText', '取消运行');
-            else
-                d = [];
-            end
-            app.BackgroundDialog = d;
-            app.BackgroundOldHV = app.UIFigure.HandleVisibility;
-            app.UIFigure.HandleVisibility = 'off';
-            app.BackgroundCanceled = false;
-            app.BackgroundTimedOut = false;
-            app.BackgroundStartedAt = tic;
 
-            try
-                app.setBackgroundProgress('启动并行池...');
-                pool = gcp('nocreate');
-                app.BackgroundCreatedPool = isempty(pool);
-                if isempty(pool)
-                    % A single background run only occupies one worker.
-                    % Large pools are reserved for explicitly parallel sweeps.
-                    pool = parpool('Processes', max(1, app.BackgroundWorkers));
-                end
-                root = fileparts(fileparts(which('mps.App')));
-                try
-                    wait(parfevalOnAll(pool, @addpath, 0, root));
-                catch
-                end
-
-                % Close figures from the previous run.
-                if isfield(app.Results.LastRun, 'figureHandles')
-                    old = app.Results.LastRun.figureHandles;
-                    for k = 1:numel(old)
-                        if isvalid(old(k))
-                            close(old(k));
-                        end
+            % Close figures from the previous run.
+            if isfield(app.Results.LastRun, 'figureHandles')
+                old = app.Results.LastRun.figureHandles;
+                for k = 1:numel(old)
+                    if isvalid(old(k))
+                        close(old(k));
                     end
                 end
+            end
 
-                app.setBackgroundProgress('后台运行 MATLAB 脚本...');
-                if app.ProjectMode || ...
-                        (~isempty(app.EntryFile) && ...
-                        ~strcmpi(app.EntryFile, app.SourceFile))
-                    app.BackgroundFuture = parfeval(pool, ...
-                        @mps.backgroundProjectRun, 1, app.SourceFile, ...
-                        app.EntryFile, app.Params, app.MaxVariableMB, ...
-                        app.MaxTotalMB, app.SaveFigFiles, ...
-                        app.FigureResolution, app.LazyWorkspaceMB);
-                else
-                    app.BackgroundFuture = parfeval(pool, ...
-                        @mps.backgroundRun, 1, app.SourceFile, app.Params, ...
-                        app.MaxVariableMB, app.MaxTotalMB, ...
-                        app.SaveFigFiles, app.FigureResolution, ...
-                        app.LazyWorkspaceMB);
-                end
-                app.BackgroundTimer = timer( ...
-                    'ExecutionMode', 'fixedSpacing', 'Period', 0.5, ...
-                    'TimerFcn', @(~, ~) app.pollBackgroundRun());
-                start(app.BackgroundTimer);
+            app.BackgroundMgr.RootPath = ...
+                fileparts(fileparts(which('mps.App')));
+            app.BackgroundMgr.BackgroundWorkers = app.BackgroundWorkers;
+            app.BackgroundMgr.KeepParallelPool = app.KeepParallelPool;
+            app.BackgroundMgr.TimeoutSeconds = app.RunTimeoutSeconds;
+            try
+                app.BackgroundMgr.start( ...
+                    @(pool) mps.backgroundLaunch(app, pool));
             catch err
                 app.finishBackgroundRun([], err.message);
             end
-        end
-
-        function pollBackgroundRun(app)
-            %POLLBACKGROUNDRUN Timer callback for a background run.
-            if isempty(app.BackgroundFuture)
-                return;
-            end
-            d = app.BackgroundDialog;
-            if ~isempty(d) && isvalid(d)
-                try
-                    if d.CancelRequested
-                        app.BackgroundCanceled = true;
-                        cancel(app.BackgroundFuture);
-                    end
-                catch
-                end
-            end
-            if app.RunTimeoutSeconds > 0 && ...
-                    toc(app.BackgroundStartedAt) > app.RunTimeoutSeconds
-                app.BackgroundTimedOut = true;
-                app.BackgroundCanceled = true;
-                try
-                    cancel(app.BackgroundFuture);
-                catch
-                end
-            end
-            if ~isempty(d) && isvalid(d) && ~app.BackgroundCanceled
-                if app.RunTimeoutSeconds > 0
-                    d.Message = sprintf( ...
-                        '后台运行中... 已用 %.0f s（上限 %d s）', ...
-                        toc(app.BackgroundStartedAt), app.RunTimeoutSeconds);
-                else
-                    d.Message = sprintf('后台运行中... 已用 %.0f s', ...
-                        toc(app.BackgroundStartedAt));
-                end
-            end
-
-            state = app.BackgroundFuture.State;
-            if ~any(strcmp(state, {'finished', 'cancelled'}))
-                return;
-            end
-            if ~isempty(app.BackgroundTimer) && isvalid(app.BackgroundTimer)
-                stop(app.BackgroundTimer);
-                delete(app.BackgroundTimer);
-            end
-            app.BackgroundTimer = [];
-
-            if app.BackgroundCanceled
-                if app.BackgroundTimedOut
-                    msg = sprintf('后台运行超时（%d s），已取消。', ...
-                        app.RunTimeoutSeconds);
-                else
-                    msg = '后台运行已取消。';
-                end
-                app.finishBackgroundRun([], msg);
-                return;
-            end
-            try
-                out = fetchOutputs(app.BackgroundFuture);
-            catch err
-                app.finishBackgroundRun([], err.message);
-                return;
-            end
-            app.finishBackgroundRun(out, '');
         end
 
         function finishBackgroundRun(app, out, errorMessage)
             %FINISHBACKGROUNDRUN Restore UI and publish a background result.
-            app.cleanupBackgroundRun();
             if ~isempty(errorMessage)
                 app.StatusLabel.Text = errorMessage;
                 if strcmp(app.UIFigure.Visible, 'on')
@@ -1190,51 +993,16 @@ classdef App < handle
             app.setBusy(false);
         end
 
-        function cleanupBackgroundRun(app)
-            if ~isempty(app.BackgroundTimer) && isvalid(app.BackgroundTimer)
-                try
-                    stop(app.BackgroundTimer);
-                    delete(app.BackgroundTimer);
-                catch
-                end
-            end
-            app.BackgroundTimer = [];
-            if ~isempty(app.BackgroundDialog) && isvalid(app.BackgroundDialog)
-                delete(app.BackgroundDialog);
-            end
-            app.BackgroundDialog = [];
-            if ~isempty(app.UIFigure) && isvalid(app.UIFigure) && ...
-                    ~isempty(app.BackgroundOldHV)
-                app.UIFigure.HandleVisibility = app.BackgroundOldHV;
-            end
-            app.BackgroundOldHV = [];
-            app.BackgroundFuture = [];
-            app.BackgroundCanceled = false;
-            app.BackgroundTimedOut = false;
-            if app.BackgroundCreatedPool && ~app.KeepParallelPool
-                try
-                    delete(gcp('nocreate'));
-                catch
-                end
-            end
-            app.BackgroundCreatedPool = false;
-        end
-
         function cancelBackgroundRun(app)
-            if ~isempty(app.BackgroundFuture)
-                try
-                    cancel(app.BackgroundFuture);
-                catch
-                end
+            if ~isempty(app.BackgroundMgr)
+                app.BackgroundMgr.cancel();
             end
-            app.cleanupBackgroundRun();
         end
 
         function setBackgroundProgress(app, message)
-            if ~isempty(app.BackgroundDialog) && isvalid(app.BackgroundDialog)
-                app.BackgroundDialog.Message = message;
+            if ~isempty(app.BackgroundMgr)
+                app.BackgroundMgr.setProgress(message);
             end
-            drawnow;
         end
 
         % -----------------------------------------------------------------
@@ -1357,8 +1125,9 @@ classdef App < handle
                 app.PresetsFile = mps.presetsPath(app.SourceFile);
                 try
                     app.Presets = mps.readPresets(app.SourceFile);
-                catch
+                catch err
                     app.Presets = struct([]);
+                    mps.logWarning('读取参数集', err);
                 end
             end
             app.refreshPresets();
@@ -1687,7 +1456,8 @@ classdef App < handle
             if ~hadPool && ~app.KeepParallelPool
                 try
                     delete(gcp('nocreate'));
-                catch
+                catch err
+                    mps.logWarning('关闭扫描并行池', err, 'Silent', true);
                 end
             end
             clear cleanupObj;
@@ -1858,13 +1628,15 @@ classdef App < handle
         function onClose(app)
             try
                 app.cancelBackgroundRun();
-            catch
+            catch err
+                mps.logWarning('关闭时取消后台运行', err);
             end
             try
                 if app.TableCtl.needsSave()
                     app.saveSession();
                 end
-            catch
+            catch err
+                mps.logWarning('关闭时保存会话', err);
             end
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                 app.UIFigure.UserData = [];

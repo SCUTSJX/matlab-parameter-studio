@@ -20,7 +20,9 @@ function stamp = projectStamp(root)
             s = mps.sourceStamp(file);
             parts{end+1} = sprintf('%s|%.10g|%d|%.10g', ...
                 file, s.datenum, s.bytes, s.checksum); %#ok<AGROW>
-        catch
+        catch err
+            mps.logWarning(sprintf('读取项目文件指纹 %s', file), err, ...
+                'Silent', true);
         end
     end
     stamp.signature = strjoin(sort(parts), ';');

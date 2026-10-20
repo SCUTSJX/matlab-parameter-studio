@@ -48,7 +48,8 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
                     ~isfile(keepScript)
                 copyfile(tempScript, keepScript);
             end
-        catch
+        catch err
+            mps.logWarning('保存扫描场景脚本', err);
         end
 
         out.ok = r.ok;
@@ -85,7 +86,8 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
             isfile(tempScript)
         try
             delete(tempScript);
-        catch
+        catch err
+            mps.logWarning('清理扫描场景临时脚本', err, 'Silent', true);
         end
     end
 end
@@ -115,7 +117,8 @@ function slim = loadSelected(matFile, xName, yNames)
                 slim.(names{k}) = S.(names{k});
             end
         end
-    catch
+    catch err
+        mps.logWarning('加载扫描场景曲线', err);
     end
 end
 

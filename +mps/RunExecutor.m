@@ -86,7 +86,8 @@ classdef RunExecutor < handle
                 if isfile(keepScript)
                     r.scriptPath = keepScript;
                 end
-            catch
+            catch err
+                mps.logWarning('保存运行脚本副本', err);
             end
             clear scriptCleaner;
 
@@ -114,7 +115,8 @@ classdef RunExecutor < handle
                     n = n + 1;
                 end
                 mkdir(outDir);
-            catch
+            catch err
+                mps.logWarning('创建运行输出目录，改用临时目录', err);
                 root = fullfile(tempdir, 'matlab_parameter_studio_runs');
                 if ~isfolder(root)
                     mkdir(root);
@@ -149,13 +151,15 @@ classdef RunExecutor < handle
                     ~isfile(keepScript)
                 try
                     copyfile(tempScript, keepScript);
-                catch
+                catch err
+                    mps.logWarning('保留运行脚本', err);
                 end
             end
             if ~strcmpi(tempScript, keepScript) && isfile(tempScript)
                 try
                     delete(tempScript);
-                catch
+                catch err
+                    mps.logWarning('清理临时运行脚本', err, 'Silent', true);
                 end
             end
         end

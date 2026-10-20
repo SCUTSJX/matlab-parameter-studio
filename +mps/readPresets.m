@@ -15,7 +15,8 @@ function presets = readPresets(sourceFile)
     end
     try
         data = jsondecode(fileread(p));
-    catch
+    catch err
+        mps.logWarning('读取参数集', err);
         return;
     end
     if ~isstruct(data) || ~isfield(data, 'presets')

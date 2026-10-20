@@ -17,10 +17,12 @@ function writeManualParams(sourceFile, params)
         end
         fid = fopen(path, 'w', 'n', 'UTF-8');
         if fid < 0
+            mps.logWarning('写入手动参数', sprintf('无法创建 %s', path));
             return;
         end
         fprintf(fid, '%s', jsonencode(manual));
         fclose(fid);
-    catch
+    catch err
+        mps.logWarning('写入手动参数', err);
     end
 end

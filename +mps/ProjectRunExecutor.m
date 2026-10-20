@@ -70,7 +70,8 @@ classdef ProjectRunExecutor < handle
                 if isfolder(shadowResults)
                     try
                         rmdir(shadowResults, 's');
-                    catch
+                    catch err
+                        mps.logWarning('清理影子运行结果', err);
                     end
                 end
             end
@@ -138,7 +139,8 @@ classdef ProjectRunExecutor < handle
                 if isfile(keepScript)
                     r.scriptPath = keepScript;
                 end
-            catch
+            catch err
+                mps.logWarning('保存项目运行脚本副本', err);
             end
 
             % Preserve the project's own result folder (metrics.csv,
@@ -148,7 +150,8 @@ classdef ProjectRunExecutor < handle
                 try
                     copyProjectTree(shadowResults, ...
                         fullfile(outDir, 'project_results'));
-                catch
+                catch err
+                    mps.logWarning('复制项目运行结果', err);
                 end
             end
 
@@ -221,7 +224,8 @@ function slim = loadSelected(matFile, names)
                 slim.(names{k}) = S.(names{k});
             end
         end
-    catch
+    catch err
+        mps.logWarning('加载项目曲线变量', err);
     end
 end
 
@@ -289,7 +293,8 @@ function cleanupTree(path)
     if isfolder(path)
         try
             rmdir(path, 's');
-        catch
+        catch err
+            mps.logWarning('清理临时项目目录', err, 'Silent', true);
         end
     end
 end

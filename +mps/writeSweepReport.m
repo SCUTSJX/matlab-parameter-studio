@@ -192,8 +192,9 @@ function [reportPath, metricsPath] = writeSweepReport(sweepRoot, ...
         try
             T = struct2table(metrics);
             writetable(T, metricsPath, 'Encoding', 'UTF-8');
-        catch
+        catch err
             metricsPath = '';
+            mps.logWarning('写入扫描指标 CSV', err);
         end
     else
         metricsPath = '';
@@ -216,8 +217,12 @@ function [reportPath, metricsPath] = writeSweepReport(sweepRoot, ...
         if fid3 >= 0
             fprintf(fid3, '%s', jsonencode(meta));
             fclose(fid3);
+        else
+            mps.logWarning('写入扫描 run.json', ...
+                '无法创建扫描运行摘要');
         end
-    catch
+    catch err
+        mps.logWarning('写入扫描 run.json', err);
     end
 end
 

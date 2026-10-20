@@ -15,7 +15,8 @@ function session = readSession(sourceFile)
     end
     try
         data = jsondecode(fileread(path));
-    catch
+    catch err
+        mps.logWarning('读取会话文件', err);
         return;
     end
     if ~isstruct(data) || ~isfield(data, 'values')

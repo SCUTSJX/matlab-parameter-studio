@@ -103,7 +103,8 @@ classdef ParameterTableController < handle
                 mps.writeSession(obj.SourceFile, obj.Params, obj.SourceStamp);
                 mps.writeManualParams(obj.SourceFile, obj.Params);
                 obj.SessionDirty = false;
-            catch
+            catch err
+                mps.logWarning('保存会话和手动参数', err);
             end
         end
 
@@ -541,7 +542,8 @@ classdef ParameterTableController < handle
                     lines(end) = [];
                 end
                 obj.SourceLinesByFile(file) = lines;
-            catch
+            catch err
+                mps.logWarning(sprintf('读取源码预览 %s', file), err);
             end
         end
 

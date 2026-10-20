@@ -136,7 +136,8 @@ classdef SweepRunner < handle
                         slim.(names{k}) = S.(names{k});
                     end
                 end
-            catch
+            catch err
+                mps.logWarning('加载扫描曲线变量', err);
             end
         end
 
@@ -213,7 +214,8 @@ classdef SweepRunner < handle
                         if isfile(keepScript)
                             r.scriptPath = keepScript;
                         end
-                    catch
+                    catch err
+                        mps.logWarning('保存扫描运行脚本副本', err);
                     end
                     clear cleaner;
                 end
@@ -342,7 +344,8 @@ classdef SweepRunner < handle
                 else
                     tempScript = keepScript;
                 end
-            catch
+            catch err
+                mps.logWarning('创建扫描临时脚本', err);
                 tempScript = keepScript;
             end
         end
@@ -476,8 +479,9 @@ classdef SweepRunner < handle
             try
                 exportgraphics(fig, overlayPath, 'Resolution', 150, ...
                     'BackgroundColor', 'white');
-            catch
+            catch err
                 overlayPath = '';
+                mps.logWarning('导出扫描叠加图', err);
             end
             clear half;
         end

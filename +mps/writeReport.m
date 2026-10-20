@@ -212,11 +212,15 @@ function reportPath = writeReport(outDir, sourceFile, params, result)
     if fid2 >= 0
         fprintf(fid2, '%s', jsonencode(record));
         fclose(fid2);
+    else
+        mps.logWarning('写入参数 JSON', ...
+            sprintf('无法创建 %s', jsonPath));
     end
 
     try
         save(fullfile(outDir, 'parameters.mat'), 'params');
-    catch
+    catch err
+        mps.logWarning('写入 parameters.mat', err);
     end
 
     % Machine-readable run record used by the run history browser.
@@ -255,7 +259,8 @@ function writeRunJson(path, meta)
         cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
         fprintf(fid, '%s', jsonencode(meta));
         clear cleaner;
-    catch
+    catch err
+        mps.logWarning('写入运行摘要 JSON', err);
     end
 end
 

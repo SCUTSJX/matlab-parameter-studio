@@ -128,11 +128,12 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             exportgraphics(f, pngPath, 'Resolution', figureResolution, ...
                 'BackgroundColor', 'white');
             wrote = true;
-        catch
+        catch firstErr
             try
                 saveas(f, pngPath);
                 wrote = true;
             catch
+                mps.logWarning('导出运行图窗 PNG', firstErr);
             end
         end
         figFile = '';
@@ -140,8 +141,9 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             try
                 figFile = fullfile(figDir, sprintf('fig_%02d.fig', k));
                 savefig(f, figFile);
-            catch
+            catch err
                 figFile = '';
+                mps.logWarning('保存运行图窗 .fig', err);
             end
         end
         if wrote
@@ -165,13 +167,14 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
             matFile = fullfile(outDir, 'workspace.mat');
             save(matFile, '-struct', 'wsData');
             result.matFile = matFile;
-        catch
+        catch firstErr
             try
                 wsData = result.workspaceData; %#ok<NASGU>
                 matFile = fullfile(outDir, 'workspace.mat');
                 save(matFile, '-struct', 'wsData', '-v7.3');
                 result.matFile = matFile;
             catch
+                mps.logWarning('保存运行工作区', firstErr);
             end
         end
     end
@@ -179,7 +182,8 @@ function result = runScript(sourceFile, scriptPath, outDir, varargin)
     if isfile(logFile)
         try
             result.log = fileread(logFile);
-        catch
+        catch err
+            mps.logWarning('读取运行日志', err);
         end
     end
 

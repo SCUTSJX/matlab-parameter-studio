@@ -33,7 +33,8 @@ function copyLevel(source, target, excluded)
         else
             try
                 copyfile(src, dst);
-            catch
+            catch err
+                mps.logWarning(sprintf('复制项目文件 %s', item.name), err);
             end
         end
     end

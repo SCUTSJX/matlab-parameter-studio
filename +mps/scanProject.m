@@ -28,7 +28,9 @@ function params = scanProject(root, varargin)
     for k = 1:numel(paths)
         try
             one = mps.scan(paths{k});
-        catch
+        catch err
+            mps.logWarning(sprintf('扫描项目文件 %s', paths{k}), err, ...
+                'Silent', true);
             continue;
         end
         if isempty(params)

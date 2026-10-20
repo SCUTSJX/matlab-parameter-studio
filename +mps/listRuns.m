@@ -159,7 +159,8 @@ function data = readJson(path)
         if isstruct(value)
             data = value;
         end
-    catch
+    catch err
+        mps.logWarning(sprintf('读取运行记录 %s', path), err);
     end
 end
 
@@ -287,7 +288,9 @@ function bytes = folderBytes(folder)
                 bytes = bytes + items(k).bytes;
             end
         end
-    catch
+    catch err
+        mps.logWarning(sprintf('统计运行目录大小 %s', folder), err, ...
+            'Silent', true);
     end
 end
 
@@ -326,7 +329,8 @@ function ok = statusFromReport(reportPath)
         elseif contains(html, '运行报告')
             ok = 1;
         end
-    catch
+    catch err
+        mps.logWarning('解析运行报告状态', err);
     end
 end
 

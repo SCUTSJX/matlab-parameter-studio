@@ -8,7 +8,8 @@ function params = readManualParams(sourceFile)
     end
     try
         raw = jsondecode(fileread(path));
-    catch
+    catch err
+        mps.logWarning('读取手动参数', err);
         return;
     end
     if iscell(raw)
@@ -30,7 +31,8 @@ function params = readManualParams(sourceFile)
         try
             p = mps.makeManualParam(sourceFile, name, value, ...
                 fieldChar(r, 'description'), fieldChar(r, 'unit'));
-        catch
+        catch err
+            mps.logWarning(sprintf('跳过无效手动参数 %s', name), err);
             continue;
         end
         if isfield(r, 'use') && (islogical(r.use) || isnumeric(r.use))

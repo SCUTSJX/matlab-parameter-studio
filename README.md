@@ -4,6 +4,8 @@
 
 ![截图](docs/screenshot.png)
 
+> 文档截图由 `docs/make_screenshots.m` 生成，使用通用演示路径，不包含本机用户名或真实项目路径。
+
 ## 它解决什么问题
 
 用 AI 生成 MATLAB 仿真脚本很方便，但后续自己调参很麻烦：想把某个 `1` 改成 `2`，又要让 AI 再跑一遍。
@@ -356,8 +358,14 @@ install.m                    安装/加入 MATLAB path
 +mps/summarizeWhos.m         懒加载工作区的轻量摘要
 +mps/backgroundRun.m         后台单次运行的 worker 入口
 +mps/backgroundProjectRun.m  后台项目运行的 worker 入口
++mps/backgroundLaunch.m      后台运行任务提交
++mps/BackgroundRunManager.m  后台运行生命周期（池/计时/取消/清理）
++mps/ProjectSession.m        项目加载模型（扫描/源码/默认文件筛选）
++mps/SourceController.m      源文件变化检测/重扫/保留修改
 +mps/SweepRunner.m           批量扫描执行器（组合/叠图/指标/报告）
 +mps/autoWorkerCount.m       按场景/CPU/内存自动选择保守 worker 数
++mps/logWarning.m            非致命 IO 失败统一日志/一次性警告
++mps/cleanupShadowProjects.m 清理过期项目影子目录
 +mps/runSweepScenario.m      并行扫参的单个 worker 入口
 +mps/ParameterTableController.m 参数表/选择/批量修改/撤销/会话
 +mps/ResultsController.m     结果图/工作区/绘图/CSV 控制器
@@ -406,7 +414,10 @@ install.m                    安装/加入 MATLAB path
 +mps/writeSweepReport.m      批量扫描 HTML 报告 + sweep.json + 指标 CSV
 demo/demo_simulation.m       弹簧-阻尼示例
 demo/relative_demo.m         相对路径加载示例
-tests/run_tests.m            自测
+tests/run_tests.m            测试入口（fixture/清理）
+tests/test_*.m               按功能拆分的测试脚本
+tests/README.md              本地测试、PCT 与 self-hosted CI 说明
+.github/workflows/matlab-tests.yml  MATLAB self-hosted CI
 ```
 
 ## 测试
@@ -418,7 +429,15 @@ addpath('tests')
 run_tests
 ```
 
-测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、复用图窗捕获、报告生成、多行嵌套 `struct`、`% @param` / `% @ignore` 标记、手动参数、AI 注释模板与导入、锁定参数、运行对比、参数集预设、批量扫描、函数文件扫描、批量修改/粘贴、扫参指标与 CSV、运行历史与历史参数载入、运行大小统计、交互调用检测、扫参取消、并行扫参与后台运行（有 PCT 时）、工作区捕获预算、撤销/重做、会话恢复、保存前 diff、源文件指纹、懒加载工作区、项目扫描、多文件项目执行器、项目扫参、影子目录复用、结果/保存/参数表控制器构建、界面构建。
+或从终端：
+
+```bat
+matlab -batch "addpath('tests'); run_tests"
+```
+
+测试按功能拆在 `tests/test_*.m`，`run_tests.m` 只负责共享 fixture 和清理；PCT 测试在无许可证时自动跳过，结束时关闭测试创建的并行池。CI 使用 self-hosted Windows MATLAB runner，配置见 `.github/workflows/matlab-tests.yml` 和 `tests/README.md`。
+
+测试覆盖：参数识别、数值校验、改值运行、图窗/工作区抓取、复用图窗捕获、报告生成、多行嵌套 `struct`、`% @param` / `% @ignore` 标记、手动参数、AI 注释模板与导入、锁定参数、运行对比、参数集预设、批量扫描、函数文件扫描、批量修改/粘贴、扫参指标与 CSV、运行历史与历史参数载入、运行大小统计、交互调用检测、扫参取消、并行扫参与后台运行（有 PCT 时）、工作区捕获预算、撤销/重做、会话恢复、保存前 diff、源文件指纹、懒加载工作区、项目扫描、多文件项目执行器、项目扫参、影子目录复用/删除同步/过期清理、结果/保存/参数表控制器构建、界面构建。
 
 ## 已知限制
 

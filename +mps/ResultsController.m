@@ -164,7 +164,8 @@ classdef ResultsController < handle
                         end
                         names{end+1} = vars(k).name; %#ok<AGROW>
                     end
-                catch
+                catch err
+                    mps.logWarning('读取工作区变量列表', err);
                 end
             elseif isstruct(obj.LastWorkspace)
                 fields = fieldnames(obj.LastWorkspace);
@@ -436,7 +437,8 @@ classdef ResultsController < handle
                 try
                     S = load(matFile, names{:});
                     return;
-                catch
+                catch err
+                    mps.logWarning('按需加载工作区变量', err);
                 end
             end
             if isstruct(obj.LastWorkspace)

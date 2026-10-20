@@ -295,7 +295,8 @@ function p = loadParams(dir)
     end
     try
         raw = jsondecode(fileread(f));
-    catch
+    catch err
+        mps.logWarning('读取运行参数对比 JSON', err);
         return;
     end
     if ~isstruct(raw) || isempty(raw)
@@ -392,7 +393,8 @@ function S = loadWorkspace(runDir)
         'matlab.graphics.Graphics', 'matlab.graphics.axis.Axes'};
     try
         info = whos('-file', f);
-    catch
+    catch err
+        mps.logWarning('读取对比工作区变量列表', err);
         return;
     end
     keep = {};
@@ -414,8 +416,9 @@ function S = loadWorkspace(runDir)
     cleaner = onCleanup(@() warning(oldWarning)); %#ok<NASGU>
     try
         S = load(f, keep{:});
-    catch
+    catch err
         S = struct();
+        mps.logWarning('读取对比工作区变量', err);
     end
 end
 
@@ -451,8 +454,9 @@ function assets = copyFigureSet(figs, assetDir, prefix)
         try
             copyfile(figs{k}, target);
             assets{end+1} = target; %#ok<AGROW>
-        catch
+        catch err
             assets{end+1} = figs{k}; %#ok<AGROW>
+            mps.logWarning('复制对比图窗', err);
         end
     end
 end
