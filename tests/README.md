@@ -55,7 +55,10 @@ mps.preflight
 
 This checks the local MATLAB version, writable temp directory, demo script and
 required UI functions, then runs the full suite. It writes a timestamped log to
-`logs/preflight_*.log` (gitignored).
+`logs/preflight_*.log` (gitignored), keeps the newest 20 logs by default
+(`'KeepLogs', N` changes this), and redacts the repository, temp and user paths
+to `<repo>`, `<temp>` and `<user>` before closing the log. Still skim a log
+before sharing it.
 
 ```matlab
 mps.preflight('Full', false)   % environment check only

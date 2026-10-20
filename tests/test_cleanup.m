@@ -51,9 +51,31 @@
     if isfolder(preflightDir)
         rmdir(preflightDir, 's');
     end
-    pre = mps.preflight('Full', false, 'LogDir', preflightDir);
+    mkdir(preflightDir);
+    for oldLog = 1:3
+        oldName = sprintf('preflight_2020010%d_000000.log', oldLog);
+        fid = fopen(fullfile(preflightDir, oldName), 'w', 'n', 'UTF-8');
+        fprintf(fid, 'old log %d\n', oldLog);
+        fclose(fid);
+    end
+    pre = mps.preflight('Full', false, 'LogDir', preflightDir, ...
+        'KeepLogs', 2);
     assert(pre.ok, pre.error);
     assert(isfile(pre.logFile), 'preflight should write a timestamped log');
+    kept = dir(fullfile(preflightDir, 'preflight_*.log'));
+    assert(numel(kept) == 2, 'KeepLogs should keep only the newest logs');
+
+    fid = fopen(pre.logFile, 'r');
+    logBytes = fread(fid, Inf, '*uint8')';
+    fclose(fid);
+    logText = char(logBytes);
+    assert(isempty(strfind(logText, root)), ...
+        'preflight log should not contain the absolute repo path');
+    userProfile = getenv('USERPROFILE');
+    if ~isempty(userProfile)
+        assert(isempty(strfind(logText, userProfile)), ...
+            'preflight log should not contain the local user profile');
+    end
     if isfolder(preflightDir)
         rmdir(preflightDir, 's');
     end

@@ -14,7 +14,8 @@ timestamped log under `logs/`. For an environment-only check use
 - all tests pass;
 - no `MATLAB` / `MATLABWindow` processes remain afterwards;
 - a test-created parallel pool is stopped;
-- the preflight log exists in `logs/`.
+- the preflight log exists in `logs/` and does not expose the local user path;
+- `logs/` contains at most 20 preflight logs (the default retention limit).
 
 ## Manual smoke test
 
