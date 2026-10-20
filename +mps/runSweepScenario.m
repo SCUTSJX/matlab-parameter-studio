@@ -1,7 +1,12 @@
 function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
     runDir, keepFigures, xName, yNames, maxVariableMB, maxTotalMB, ...
-    saveFigFiles, figureResolution, lazyWorkspaceMB)
+    saveFigFiles, figureResolution, lazyWorkspaceMB, seed)
 %RUNSWEEPSCENARIO Execute one sweep scenario on a parallel worker.
+%
+%   seed is optional.  When provided, the worker sets the random stream to
+%   that seed immediately before running the user script.  The caller
+%   computes one seed per scenario so serial and parallel sweeps produce the
+%   same random stream.
 %
 %   Returns a slim, serializable result: figure paths, workspace summary and
 %   only the selected X/Y vectors (large workspaces stay on the worker).
@@ -37,6 +42,9 @@ function out = runSweepScenario(sourceFile, baseParams, activeIdx, values, ...
             tempScript = keepScript;
             mps.applyEdits(sourceFile, params, tempScript, ...
                 'NeutralizeCloseAll', true);
+        end
+        if nargin >= 14 && ~isempty(seed)
+            rng(double(seed), 'twister');
         end
         r = mps.runScript(sourceFile, tempScript, runDir, ...
             'MaxVariableMB', maxVariableMB, 'MaxTotalMB', maxTotalMB, ...

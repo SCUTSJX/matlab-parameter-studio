@@ -93,6 +93,43 @@
     delete(sweepDemo2);
     fprintf('  interactive detection + sweep cancel: ok\n');
 
+    % --- 21b. Per-scenario random seeds ---------------------------------
+    rngState = rng;
+    rngDemo = fullfile(tempdir, 'mps_rng_sweep_demo.m');
+    fid = fopen(rngDemo, 'w', 'n', 'UTF-8');
+    fprintf(fid, 'k = 1;\nr1 = rand;\nr2 = rand;\ny = k + r1 + r2;\n');
+    fclose(fid);
+    pRng = mps.scan(rngDemo);
+    kiRng = find(strcmp({pRng.name}, 'k'), 1);
+    rngRunner = mps.SweepRunner(rngDemo, pRng, kiRng, {[1 2]}, ...
+        false, '', {'r1'}, false);
+    rngRunner.BaseSeed = 123;
+    rngRunner.Progress = @(fraction, message) [];
+    serialA = rngRunner.run();
+    assert(serialA.ok && serialA.count == 2, 'seeded serial sweep failed');
+    a1 = serialA.results(1).workspaceData.r1;
+    a2 = serialA.results(2).workspaceData.r1;
+    assert(abs(a1 - a2) > 0, 'different scenarios should get different seeds');
+    serialB = rngRunner.run();
+    assert(abs(a1 - serialB.results(1).workspaceData.r1) < 1e-12, ...
+        'same BaseSeed should reproduce the same random stream');
+    if license('test', 'Distrib_Computing_Toolbox')
+        rngRunner.Parallel = true;
+        rngRunner.NumWorkers = 2;
+        rngRunner.MaxWorkers = 2;
+        parRng = rngRunner.run();
+        assert(parRng.ok && parRng.count == 2, 'seeded parallel sweep failed');
+        assert(abs(a1 - parRng.results(1).workspaceData.r1) < 1e-12, ...
+            'serial and parallel sweeps should share the same seed');
+    end
+    rngRoot = fullfile(fileparts(rngDemo), 'parameter_studio_runs');
+    if isfolder(rngRoot)
+        rmdir(rngRoot, 's');
+    end
+    delete(rngDemo);
+    rng(rngState);
+    fprintf('  per-scenario random seeds: ok\n');
+
     if ~hadPool
         try
             delete(gcp('nocreate'));

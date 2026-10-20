@@ -21,6 +21,7 @@ classdef App < handle
         NumWorkers = 0          % 0 = auto: conservative, capped by MaxWorkers
         MaxWorkers = 4
         BackgroundWorkers = 1
+        SweepSeed = 0           % per-scenario base seed; [] disables seeding
         KeepParallelPool = false
         RunTimeoutSeconds = 0   % 0 = no timeout
     end
@@ -1402,6 +1403,7 @@ classdef App < handle
                 runner.FigureResolution = app.FigureResolution;
                 runner.NumWorkers = app.NumWorkers;
                 runner.MaxWorkers = app.MaxWorkers;
+                runner.BaseSeed = app.SweepSeed;
                 runner.MaxScenarios = maxScenarios;
                 runner.ProjectMode = app.ProjectMode;
                 runner.EntryFile = app.EntryFile;

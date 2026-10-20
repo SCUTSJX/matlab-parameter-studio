@@ -31,6 +31,7 @@ classdef SweepRunner < handle
         MaxScenarios = 24
         NumWorkers = 0
         MaxWorkers = 4
+        BaseSeed = 0
         Parallel = false
         Progress = @(fraction, message) []
         ShouldCancel = @() false
@@ -115,6 +116,21 @@ classdef SweepRunner < handle
     end
 
     methods (Access = private)
+        function seed = scenarioSeed(obj, k)
+            seed = [];
+            if isempty(obj.BaseSeed) || ~isnumeric(obj.BaseSeed) || ...
+                    ~isscalar(obj.BaseSeed) || ~isfinite(obj.BaseSeed)
+                return;
+            end
+            seed = mod(round(double(obj.BaseSeed)) + double(k) - 1, 2^32);
+        end
+
+        function applySeed(~, seed)
+            if ~isempty(seed)
+                rng(double(seed), 'twister');
+            end
+        end
+
         function slim = loadSelected(obj, matFile)
             names = {};
             if ~isempty(obj.XName) && ~strcmp(obj.XName, '(无)')
@@ -173,6 +189,7 @@ classdef SweepRunner < handle
                         num2str(scenarios(k).values{j}, '%.10g');
                     params(obj.ActiveIdx(j)).use = true;
                 end
+                seed = obj.scenarioSeed(k);
 
                 if obj.ProjectMode
                     ex = mps.ProjectRunExecutor(obj.EntryFile, ...
@@ -192,6 +209,7 @@ classdef SweepRunner < handle
                     end
                     ex.Progress = @(message) obj.Progress( ...
                         (k - 1) / max(total, 1), message);
+                    obj.applySeed(seed);
                     out = ex.run();
                     r = out.run;
                 else
@@ -200,6 +218,7 @@ classdef SweepRunner < handle
                         tempScript, keepScript)); %#ok<NASGU>
                     mps.applyEdits(obj.SourceFile, params, tempScript, ...
                         'NeutralizeCloseAll', true);
+                    obj.applySeed(seed);
                     r = mps.runScript(obj.SourceFile, tempScript, runDir, ...
                         'MaxVariableMB', obj.MaxVariableMB, ...
                         'MaxTotalMB', obj.MaxTotalMB, ...
@@ -266,6 +285,7 @@ classdef SweepRunner < handle
                 if ~isfolder(runDir)
                     mkdir(runDir);
                 end
+                seed = obj.scenarioSeed(k);
                 if obj.ProjectMode
                     futures{k} = parfeval(pool, ...
                         @mps.runProjectSweepScenario, 1, ...
@@ -274,14 +294,14 @@ classdef SweepRunner < handle
                         runDir, obj.XName, obj.YNames, ...
                         obj.MaxVariableMB, obj.MaxTotalMB, ...
                         obj.LazyWorkspaceMB, obj.SaveFigFiles, ...
-                        obj.FigureResolution);
+                        obj.FigureResolution, seed);
                 else
                     futures{k} = parfeval(pool, @mps.runSweepScenario, 1, ...
                         obj.SourceFile, obj.Params, obj.ActiveIdx, ...
                         scenarios(k).values, runDir, false, obj.XName, ...
                         obj.YNames, obj.MaxVariableMB, obj.MaxTotalMB, ...
                         obj.SaveFigFiles, obj.FigureResolution, ...
-                        obj.LazyWorkspaceMB);
+                        obj.LazyWorkspaceMB, seed);
                 end
             end
             futureArray = [futures{:}];

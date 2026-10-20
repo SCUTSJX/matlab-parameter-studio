@@ -1,7 +1,10 @@
 function out = runProjectSweepScenario(projectRoot, entryFile, baseParams, ...
     activeIdx, values, runDir, xName, yNames, maxVariableMB, maxTotalMB, ...
-    lazyWorkspaceMB, saveFigFiles, figureResolution)
+    lazyWorkspaceMB, saveFigFiles, figureResolution, seed)
 %RUNPROJECTSWEEPSCENARIO Execute one project sweep scenario on a worker.
+%
+%   seed is optional.  When provided, the worker sets the random stream to
+%   that seed immediately before running the project entry script.
 
     if nargin < 11, lazyWorkspaceMB = 32; end
     if nargin < 12, saveFigFiles = false; end
@@ -31,6 +34,9 @@ function out = runProjectSweepScenario(projectRoot, entryFile, baseParams, ...
         ex.SlimWorkspace = true;
         ex.SlimNames = [{xName}, yNames];
         ex.Progress = @(message) [];
+        if nargin >= 14 && ~isempty(seed)
+            rng(double(seed), 'twister');
+        end
         result = ex.run();
         r = result.run;
         out.ok = r.ok;
