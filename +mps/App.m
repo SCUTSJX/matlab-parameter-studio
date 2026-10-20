@@ -53,6 +53,7 @@ classdef App < handle
         BackgroundCanceled = false
         BackgroundTimedOut = false
         BackgroundStartedAt = 0
+        SweepStartedAt = 0
     end
 
     methods
@@ -878,6 +879,16 @@ classdef App < handle
                 catch
                 end
             end
+            if ~isempty(d) && isvalid(d) && ~app.BackgroundCanceled
+                if app.RunTimeoutSeconds > 0
+                    d.Message = sprintf( ...
+                        '后台运行中... 已用 %.0f s（上限 %d s）', ...
+                        toc(app.BackgroundStartedAt), app.RunTimeoutSeconds);
+                else
+                    d.Message = sprintf('后台运行中... 已用 %.0f s', ...
+                        toc(app.BackgroundStartedAt));
+                end
+            end
 
             state = app.BackgroundFuture.State;
             if ~any(strcmp(state, {'finished', 'cancelled'}))
@@ -1359,6 +1370,7 @@ classdef App < handle
             end
 
             app.setBusy(true);
+            app.SweepStartedAt = tic;
             if strcmp(app.UIFigure.Visible, 'on')
                 d = uiprogressdlg(app.UIFigure, 'Title', '批量扫描', ...
                     'Message', '准备...', 'Indeterminate', 'off', ...
@@ -1430,7 +1442,14 @@ classdef App < handle
         function updateSweepProgress(app, d, fraction, message) %#ok<INUSD>
             if ~isempty(d) && isvalid(d)
                 d.Value = min(max(fraction, 0), 1);
-                d.Message = message;
+                if fraction > 0.01 && fraction < 1 && app.SweepStartedAt > 0
+                    elapsed = toc(app.SweepStartedAt);
+                    remaining = elapsed * (1 - fraction) / fraction;
+                    d.Message = sprintf('%s（已用 %.0f s，预计剩余 %.0f s）', ...
+                        message, elapsed, remaining);
+                else
+                    d.Message = message;
+                end
             end
             drawnow;
         end
