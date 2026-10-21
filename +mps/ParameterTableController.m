@@ -256,7 +256,7 @@ classdef ParameterTableController < handle
                         'Deselect all');
                 else
                     obj.SelectAllButton.Text = mps.tr('全选推荐', ...
-                        'Select all recommended');
+                        'Use recommended');
                 end
             end
             obj.updateUndoButtons();
@@ -641,11 +641,11 @@ classdef ParameterTableController < handle
             end
             if n == 0
                 obj.AnnotationStatus.Text = mps.tr('未导入注释', ...
-                    'No notes imported');
+                    'None');
                 obj.AnnotationStatus.FontColor = [0.4 0.4 0.4];
             else
                 obj.AnnotationStatus.Text = mps.tr('已注释 %d / %d', ...
-                    'Annotated %d / %d', n, total);
+                    'Notes %d/%d', n, total);
                 obj.AnnotationStatus.FontColor = [0.05 0.45 0.15];
             end
         end

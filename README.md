@@ -12,7 +12,7 @@
 
 [Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Batch sweeps](#batch-sweeps) · [Comparison](#how-it-compares) · [Limitations](#known-limitations)
 
-<img src="docs/screenshot.png" alt="MATLAB Parameter Studio main window" width="1100" />
+<img src="docs/screenshot_en.png" alt="MATLAB Parameter Studio main window" width="1100" />
 
 <sub>Main window: parameter table, results, and report preview in one place.</sub>
 
@@ -24,7 +24,7 @@
 
 It is built for the workflow where an AI or a colleague generates a simulation script, and you then need to tune masses, stiffnesses, gains, time steps, or controller constants without editing code line by line — and without sending the same request back to a chat model.
 
-> **UI language:** the standard launcher opens the Chinese UI. Use `MatlabParameterStudioEnglish` (or `MatlabParameterStudio('Language','en')`) for the English UI. Button names below describe the action; both UI languages use the same workflow.
+> **UI language:** the screenshots below show the English UI. The standard launcher opens the Chinese UI; use `MatlabParameterStudioEnglish` (or `MatlabParameterStudio('Language','en')`) for English. Both UI languages use the same workflow.
 
 ## Quick start
 
@@ -81,13 +81,13 @@ parameter_studio_runs/<timestamp>/
 
 Give parameters human-readable meaning without renaming code variables:
 
-![Annotation column](docs/screenshot_annotations.png)
+![Annotation column](docs/screenshot_annotations_en.png)
 
 ### Batch sweeps
 
 Run a grid of parameter combinations and compare the curves in one report:
 
-![Sweep overlay](docs/screenshot_sweep.png)
+![Sweep overlay](docs/screenshot_sweep_en.png)
 
 ## How it works
 

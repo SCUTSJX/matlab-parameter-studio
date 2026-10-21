@@ -32,8 +32,10 @@ timestamped log under `logs/`. For an environment-only check use
 
 ## Documentation
 
-- `docs/screenshot.png` and `docs/screenshot_annotations.png` were generated
-  with `docs/make_screenshots.m`;
+- `docs/screenshot*.png` (Chinese) and `docs/screenshot*_en.png` (English)
+  were generated with `docs/make_screenshots.m`;
+- the English README uses the `_en` screenshots; the Chinese README uses the
+  Chinese screenshots;
 - screenshots contain no user home directory or real project path;
 - `README.md` is the English default and `README.zh-CN.md` is current;
 - README usage and test commands match the release;
