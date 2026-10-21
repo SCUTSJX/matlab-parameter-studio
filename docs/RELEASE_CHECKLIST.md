@@ -38,6 +38,8 @@ timestamped log under `logs/`. For an environment-only check use
   Chinese screenshots;
 - screenshots contain no user home directory or real project path;
 - `README.md` is the English default and `README.zh-CN.md` is current;
+- `docs/guide*.md`, `docs/faq*.md` and `examples/README*` are current and cross-linked;
+- runnable examples in `examples/` execute without errors;
 - README usage and test commands match the release;
 - `+mps/version.m` is bumped.
 

@@ -10,7 +10,7 @@
 [![License](docs/badges/license.svg)](LICENSE)
 [![Version](docs/badges/version.svg)](#快速开始)
 
-[快速开始](#快速开始) · [功能](#界面说明) · [工作原理](#工作原理) · [同类项目](#在-github-上和类似项目的对比) · [已知限制](#已知限制)
+[快速开始](#快速开始) · [功能](#界面说明) · [工作原理](#工作原理) · [同类项目](#在-github-上和类似项目的对比) · [用户指南](docs/guide.zh-CN.md) · [FAQ](docs/faq.zh-CN.md) · [已知限制](#已知限制)
 
 <img src="docs/screenshot.png" alt="MATLAB Parameter Studio 主界面" width="1100" />
 
@@ -448,6 +448,11 @@ demo/relative_demo.m         相对路径加载示例
 tests/run_tests.m            测试入口（fixture/清理）
 tests/test_*.m               按功能拆分的测试脚本
 tests/README.md              本地测试、PCT、预检查与日志说明
+docs/guide.md                英文用户指南
+docs/guide.zh-CN.md          中文用户指南
+docs/faq.md                  英文 FAQ
+docs/faq.zh-CN.md            中文 FAQ
+examples/                    可运行的扫参/注释/项目模式示例
 +mps/preflight.m             本地预检查（环境检查 + 可选完整测试 + 日志）
 +mps/checkEnvironment.m      只读环境检查
 ```
@@ -508,6 +513,13 @@ mps.preflight()
 - 工具本身不联网、不上传任何文件。
 - 扫描阶段只读文本；运行阶段执行脚本，等同于你在 MATLAB 里自己运行该脚本。
 - 生成的 HTML 报告是本地静态文件，图片使用相对路径。
+
+## 文档
+
+- [用户指南](docs/guide.zh-CN.md) — 完整工作流、API 和性能说明
+- [示例](examples/README.zh-CN.md) — 扫描、扫参、注释和项目模式的可运行示例
+- [FAQ](docs/faq.zh-CN.md) — 环境、内存、并行和报告常见问题
+- [测试说明](tests/README.md)、[发布检查](docs/RELEASE_CHECKLIST.md)
 
 ## License
 

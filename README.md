@@ -10,7 +10,7 @@
 [![MIT License](docs/badges/license.svg)](LICENSE)
 [![Version](docs/badges/version.svg)](#status)
 
-[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Batch sweeps](#batch-sweeps) · [Comparison](#how-it-compares) · [Limitations](#known-limitations)
+[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) · [Batch sweeps](#batch-sweeps) · [Comparison](#how-it-compares) · [User guide](docs/guide.md) · [FAQ](docs/faq.md) · [Limitations](#known-limitations)
 
 <img src="docs/screenshot_en.png" alt="MATLAB Parameter Studio main window" width="1100" />
 
@@ -192,6 +192,9 @@ Preflight logs are written under `logs/` and are ignored by Git.
 
 ## Documentation
 
+- [User guide](docs/guide.md) — end-to-end workflow, API and performance notes.
+- [Examples](examples/README.md) — runnable scripts for scanning, sweeps, annotations and project mode.
+- [FAQ](docs/faq.md) — common setup, memory, parallel and reporting questions.
 - [简体中文 README](README.zh-CN.md) — full feature walkthrough and UI details.
 - [Test guide](tests/README.md) — test layout, PCT behavior and preflight.
 - [Release checklist](docs/RELEASE_CHECKLIST.md) — local release verification.
